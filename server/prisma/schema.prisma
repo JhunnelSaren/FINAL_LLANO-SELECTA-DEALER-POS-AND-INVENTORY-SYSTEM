@@ -292,6 +292,7 @@ model CustomerInvoice {
   storeName             String
   invoiceDate           DateTime
   billableProductAmount Float // Accepted Qty * Unit Price
+  boDeductionAmount     Float                @default(0.0)
   otherCharges          Float                @default(0.0)
   approvedDiscounts     Float                @default(0.0)
   priorBalance          Float                @default(0.0)
@@ -367,6 +368,7 @@ model InventoryLedger {
 
 model BoDiscrepancy {
   id             String    @id // e.g. "BO-2026-001"
+  customerId     String?
   deliveryRef    String?
   storeName      String?
   productId      String

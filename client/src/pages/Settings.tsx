@@ -271,15 +271,16 @@ export default function Settings() {
       const body = new FormData();
       body.append('file', file);
       const result = await apiRequest<{ imageUrl: string }>('/settings/login-page/upload', { method: 'POST', body });
-      if (target === 'logo') {
-        setLoginPage((current) => ({ ...current, logoUrl: result.imageUrl }));
-      } else {
-        setLoginPage((current) => ({
-          ...current,
-          slides: current.slides.map((slide, index) => index === target ? { ...slide, imageUrl: result.imageUrl } : slide),
-        }));
-      }
-      showToast(target === 'logo' ? 'Logo uploaded. Save to publish it.' : 'Photo uploaded. Save to publish it.', 'success');
+      const updatedLoginPage = target === 'logo'
+        ? { ...loginPage, logoUrl: result.imageUrl }
+        : { ...loginPage, slides: loginPage.slides.map((slide, index) => index === target ? { ...slide, imageUrl: result.imageUrl } : slide) };
+      setLoginPage(updatedLoginPage);
+      const saved = await apiRequest<LoginPageConfig>('/settings/login-page', {
+        method: 'PUT',
+        body: JSON.stringify(updatedLoginPage),
+      });
+      setLoginPage(saved);
+      showToast(target === 'logo' ? 'Logo uploaded and published.' : 'Login photo replaced and published.', 'success');
     } catch (err: any) {
       showToast(err.message || 'Image upload failed', 'error');
     } finally {

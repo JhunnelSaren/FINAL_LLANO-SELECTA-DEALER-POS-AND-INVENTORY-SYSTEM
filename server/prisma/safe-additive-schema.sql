@@ -39,6 +39,9 @@ CREATE INDEX IF NOT EXISTS "freezer_transactions_freezer_created_idx"
   ON "freezer_transactions" ("freezer_id", "created_at");
 
 ALTER TABLE IF EXISTS "BoDiscrepancy" ALTER COLUMN "disposition" SET DEFAULT 'Pending';
+ALTER TABLE IF EXISTS "BoDiscrepancy" ADD COLUMN IF NOT EXISTS "customerId" TEXT;
+ALTER TABLE IF EXISTS "CustomerInvoice" ADD COLUMN IF NOT EXISTS "boDeductionAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0;
+CREATE INDEX IF NOT EXISTS "BoDiscrepancy_customerId_createdAt_idx" ON "BoDiscrepancy" ("customerId", "createdAt");
 UPDATE "BoDiscrepancy"
 SET "disposition" = 'Pending'
 WHERE "disposition" IN ('Quarantined', 'Pending Inspection');

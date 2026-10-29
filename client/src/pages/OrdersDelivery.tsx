@@ -325,15 +325,49 @@ function DeliveryTab() {
   const [selectedRun, setSelectedRun] = useState<DeliveryRun | null>(null);
   const [stopForm, setStopForm] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
-  const loadData = useCallback(async () => { setLoading(true); try { const data = await apiRequest<any>('/delivery'); setRuns(Array.isArray(data) ? data : data.runs || []); } catch (e: any) { showToast(e.message, 'error'); } finally { setLoading(false); } }, [showToast]);
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiRequest<any>('/delivery');
+      const loadedRuns: DeliveryRun[] = Array.isArray(data) ? data : data.runs || [];
+      setRuns(loadedRuns);
+      setSelectedRun(current => current ? loadedRuns.find(run => run.id === current.id) ?? null : null);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleRecordStop = async (stopId: string) => {
     if (!stopForm) return;
+    const stop = selectedRun?.stops?.find(item => item.id === stopId);
+    if (!stop) { showToast('Refresh the delivery run and try again.', 'error'); return; }
+    const invalidLines = stop.items?.some((item, index) => {
+      const line = stopForm.items[index];
+      const quantities = [Number(line?.acceptedQty), Number(line?.missingQty), Number(line?.boQty)];
+      return quantities.some(value => !Number.isInteger(value) || value < 0) || quantities.reduce((sum, value) => sum + value, 0) > item.loadedQty;
+    });
+    if (invalidLines) { showToast('Accepted, short, and BO quantities must be whole numbers that do not exceed the loaded quantity.', 'warning'); return; }
+    const totalBill = stopForm.items.reduce((sum: number, line: any) => {
+      const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
+      return sum + (Number(line.acceptedQty) || 0) * Number(item?.unitPrice || 0);
+    }, 0) + Number(stop.customer?.currentBalance || 0);
+    const amountPaid = Number(stopForm.amountPaid);
+    if (!Number.isFinite(amountPaid) || amountPaid < 0 || amountPaid > totalBill) {
+      showToast('Amount collected must be between zero and the total bill.', 'warning'); return;
+    }
+    if (amountPaid > 0 && stopForm.paymentMethod !== 'Cash' && !stopForm.paymentReference.trim()) {
+      showToast('Enter the GCash or bank check reference number.', 'warning'); return;
+    }
+    if (amountPaid > 0 && stopForm.paymentMethod === 'Check' && (!stopForm.bankName.trim() || !stopForm.checkDate)) {
+      showToast('Enter the bank name and date for this bank check.', 'warning'); return;
+    }
     setSubmitting(true);
     try {
-      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName, paymentMethod: stopForm.paymentMethod, amountPaid: stopForm.amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, items: stopForm.items.map((line: any) => ({ id: line.deliveryItemId, acceptedQty: line.acceptedQty, missingQty: line.missingQty, boRefusedQty: line.boQty })) }) });
-      showToast('Delivery, shortages, bad orders, and payment saved.'); setStopForm(null); await loadData();
+      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName, paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, items: stopForm.items.map((line: any) => ({ id: line.deliveryItemId, acceptedQty: line.acceptedQty, missingQty: line.missingQty, boRefusedQty: line.boQty })) }) });
+      showToast('Delivery, BO credit, receipt, and payment saved.'); setStopForm(null); await loadData();
     } catch (e: any) { showToast(e.message, 'error'); }
     finally { setSubmitting(false); }
   };
@@ -343,20 +377,103 @@ function DeliveryTab() {
     try { await apiRequest(`/delivery/stops/${stopId}/fail`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) }); showToast('Stop marked as failed; full load recorded as backload.'); await loadData(); } catch (e: any) { showToast(e.message, 'error'); }
   };
 
-  return <div className="space-y-4"><div className="bg-white rounded-xl border overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 border-b"><tr><th className="text-left px-4 py-3">Run #</th><th className="text-left px-4 py-3">Area</th><th className="text-left px-4 py-3">Driver</th><th className="text-center px-4 py-3">Stops</th><th className="text-center px-4 py-3">Status</th><th className="text-center px-4 py-3">Actions</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Loading…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No delivery runs</td></tr> : runs.map(run => <tr key={run.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-medium text-rose-700">{run.runNumber}</td><td className="px-4 py-3">{run.area || run.route}</td><td className="px-4 py-3">{run.driver}</td><td className="px-4 py-3 text-center">{run.stops?.length || 0}</td><td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusColor(run.status)}`}>{run.status}</span></td><td className="px-4 py-3 text-center"><button onClick={() => setSelectedRun(selectedRun?.id === run.id ? null : run)} className="text-rose-600 hover:underline text-sm font-semibold">{selectedRun?.id === run.id ? 'Hide stops' : 'Open stops'}</button></td></tr>)}</tbody></table></div>
-  {selectedRun && <div className="bg-white rounded-xl border"><div className="px-4 py-3 border-b bg-slate-50"><h4 className="font-semibold">{selectedRun.area || selectedRun.route} · {selectedRun.runNumber}</h4></div>{selectedRun.stops?.map((stop, index) => <div key={stop.id} className="px-4 py-3 border-b"><div className="flex items-center justify-between gap-3"><div><span className="font-medium">#{index + 1}: {stop.storeName}</span><span className={`ml-2 px-2 py-0.5 rounded-full text-xs font-semibold border ${getStatusColor(stop.status)}`}>{stop.status}</span></div>{selectedRun.status === 'In Transit' && (stop.status === 'Pending' || stop.status === 'In Progress') && <div className="flex gap-2"><button onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, missingQty: 0, boQty: 0 })) })} className="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">Record Delivery</button><button onClick={() => markBackload(stop.id)} className="bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold">Failed / Backload</button></div>}</div>
-  {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700">Backload reason: {stop.notes || 'Delivery failed'}</p>}
-  {stopForm?.stopId === stop.id && <div className="mt-3 bg-slate-50 rounded-lg p-4 space-y-3"><table className="w-full text-sm"><thead><tr className="text-left"><th className="px-2 py-1">Product</th><th className="px-2 py-1 text-right">Loaded</th><th className="px-2 py-1">Accepted</th><th className="px-2 py-1">Short</th><th className="px-2 py-1">BO</th><th className="px-2 py-1">Billable</th></tr></thead><tbody>{stop.items?.map((item, i) => { const line = stopForm.items[i]; const bill = (Number(line?.acceptedQty) || 0) * item.unitPrice; return <tr key={item.id}><td className="px-2 py-1">{item.productName}</td><td className="px-2 py-1 text-right text-slate-500">{item.loadedQty}</td>{(['acceptedQty', 'missingQty', 'boQty'] as const).map(field => <td key={field} className="px-2 py-1"><input type="number" min={0} max={item.loadedQty} value={line?.[field] ?? 0} onChange={e => { const updated = { ...stopForm, items: [...stopForm.items] }; updated.items[i] = { ...updated.items[i], [field]: Number(e.target.value) || 0 }; setStopForm(updated); }} className="w-20 border rounded px-2 py-1 text-right" /></td>)}<td className="px-2 py-1 text-right font-medium">{formatPeso(bill)}</td></tr>; })}</tbody></table>
-  {(() => { const orderTotal = stopForm.items.reduce((sum: number, line: any) => { const item = stop.items?.find((entry: any) => entry.id === line.deliveryItemId); return sum + (Number(line.acceptedQty) || 0) * (item?.unitPrice || 0); }, 0); const previousBalance = Number(stop.customer?.currentBalance || 0); return <div className="grid grid-cols-3 gap-3 rounded-lg bg-white border p-3 text-sm"><div>Accepted products: <strong>{formatPeso(orderTotal)}</strong></div><div>Previous balance: <strong>{formatPeso(previousBalance)}</strong></div><div>Total due: <strong className="text-rose-700">{formatPeso(orderTotal + previousBalance)}</strong></div></div>; })()}
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-    <div><label className="block text-xs font-semibold mb-1">Received by</label><input value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" /></div>
-    <div><label className="block text-xs font-semibold mb-1">Payment Method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="w-full border rounded px-3 py-2 text-sm"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Check">Bank Check</option></select></div>
-    <div><label className="block text-xs font-semibold mb-1">Amount Paid (₱)</label><input type="number" min={0} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: Number(e.target.value) || 0 })} className="w-full border rounded px-3 py-2 text-sm" /></div>
-    {stopForm.paymentMethod !== 'Cash' && <div><label className="block text-xs font-semibold mb-1">Payment Reference *</label><input value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />{stopForm.paymentMethod === 'Check' && <div className="grid grid-cols-2 gap-2 mt-2"><input value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} placeholder="Bank name" className="w-full border rounded px-3 py-2 text-sm" /><input type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" /></div>}</div>}
-    <div className="md:col-span-2"><label className="block text-xs font-semibold mb-1">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" placeholder="Short items and BO are excluded from the bill automatically." /></div>
-  </div>
-  <div className="flex justify-end gap-2"><button onClick={() => setStopForm(null)} className="px-4 py-2 border rounded text-sm">Cancel</button><button onClick={() => handleRecordStop(stop.id)} disabled={submitting} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-semibold disabled:opacity-50">{submitting ? 'Saving…' : 'Save Delivery and Payment'}</button></div></div>}</div>)}</div>}
-  </div>;
+  return (
+    <div className="space-y-4">
+      <div className="overflow-x-auto rounded-xl border bg-white">
+        <table className="w-full text-sm">
+          <thead className="border-b bg-slate-50"><tr><th className="px-4 py-3 text-left">Run #</th><th className="px-4 py-3 text-left">Area</th><th className="px-4 py-3 text-left">Driver</th><th className="px-4 py-3 text-center">Stops</th><th className="px-4 py-3 text-center">Status</th><th className="px-4 py-3 text-center">Actions</th></tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Loading…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No delivery runs</td></tr> : runs.map(run => (
+              <tr key={run.id} className="border-b hover:bg-slate-50">
+                <td className="px-4 py-3 font-medium text-rose-700">{run.runNumber}</td><td className="px-4 py-3">{run.area || run.route}</td><td className="px-4 py-3">{run.driver}</td><td className="px-4 py-3 text-center">{run.stops?.length || 0}</td>
+                <td className="px-4 py-3 text-center"><span className={`rounded-full border px-2 py-1 text-xs font-semibold ${getStatusColor(run.status)}`}>{run.status}</span></td>
+                <td className="px-4 py-3 text-center"><button type="button" onClick={() => { setStopForm(null); setSelectedRun(selectedRun?.id === run.id ? null : run); }} className="text-sm font-semibold text-rose-600 hover:underline">{selectedRun?.id === run.id ? 'Hide stops' : 'Open stops'}</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {selectedRun && <div className="rounded-xl border bg-white">
+        <div className="border-b bg-slate-50 px-4 py-3"><h4 className="font-semibold">{selectedRun.area || selectedRun.route} · {selectedRun.runNumber}</h4></div>
+        {selectedRun.stops?.map((stop, index) => {
+          const stopInvoice = (stop as any).invoice;
+          const activeForm = stopForm?.stopId === stop.id;
+          const orderAmount = (lines: any[]) => lines.reduce((sum: number, line: any) => {
+            const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
+            return sum + (Number(line.acceptedQty) || 0) * Number(item?.unitPrice || 0);
+          }, 0);
+          const boAmount = (lines: any[]) => lines.reduce((sum: number, line: any) => {
+            const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
+            return sum + (Number(line.boQty) || 0) * Number(item?.unitPrice || 0);
+          }, 0);
+          const previousBalance = Number(stop.customer?.currentBalance || 0);
+          const orderTotal = activeForm ? orderAmount(stopForm.items) : 0;
+          const currentBoTotal = activeForm ? boAmount(stopForm.items) : 0;
+          const totalBill = orderTotal + previousBalance;
+          const collected = activeForm ? Number(stopForm.amountPaid) || 0 : 0;
+          const clearedCollected = activeForm && stopForm.paymentMethod !== 'Check' ? collected : 0;
+          const invalidQuantity = activeForm && stop.items?.some((item, itemIndex) => {
+            const line = stopForm.items[itemIndex];
+            return Number(line.acceptedQty) + Number(line.missingQty) + Number(line.boQty) > item.loadedQty;
+          });
+
+          return <div key={stop.id} className="border-b px-4 py-3 last:border-b-0">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><span className="font-medium">#{index + 1}: {stop.storeName}</span><span className={`ml-2 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusColor(stop.status)}`}>{stop.status}</span></div>
+              {selectedRun.status === 'In Transit' && (stop.status === 'Pending' || stop.status === 'In Progress') && <div className="flex gap-2">
+                <button type="button" onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, missingQty: 0, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Record Delivery</button>
+                <button type="button" onClick={() => markBackload(stop.id)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Failed / Backload</button>
+              </div>}
+            </div>
+            {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700">Backload reason: {stop.notes || 'Delivery failed'}</p>}
+            {!activeForm && stopInvoice && <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3 text-xs sm:grid-cols-5">
+              <div>BO deduction: <strong>{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div><div>Total bill: <strong>{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div><div>Amount collected: <strong>{formatPeso((stopInvoice.payments || []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0))}</strong></div><div>Applied to balance: <strong>{formatPeso(Number(stopInvoice.totalPaid) || 0)}</strong></div><div>Balance: <strong>{formatPeso(Number(stopInvoice.balanceRemaining) || 0)}</strong></div>
+            </div>}
+
+            {activeForm && <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-4">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
+                <thead><tr className="text-left"><th className="px-2 py-1">Product</th><th className="px-2 py-1 text-right">Loaded</th><th className="px-2 py-1">Accepted</th><th className="px-2 py-1">Short</th><th className="px-2 py-1">BO</th><th className="px-2 py-1 text-right">BO credit</th><th className="px-2 py-1 text-right">Billable</th></tr></thead>
+                <tbody>{stop.items?.map((item, itemIndex) => {
+                  const line = stopForm.items[itemIndex];
+                  const updateLine = (field: 'acceptedQty' | 'missingQty' | 'boQty', value: number) => {
+                    setStopForm((current: any) => {
+                      const updated = { ...current, items: [...current.items] };
+                      updated.items[itemIndex] = { ...updated.items[itemIndex], [field]: Math.max(0, Number.isFinite(value) ? value : 0) };
+                      return updated;
+                    });
+                  };
+                  return <tr key={item.id}>
+                    <td className="px-2 py-1">{item.productName}</td><td className="px-2 py-1 text-right text-slate-500">{item.loadedQty}</td>
+                    {(['acceptedQty', 'missingQty', 'boQty'] as const).map(field => <td key={field} className="px-2 py-1"><input type="number" min={0} step={1} max={item.loadedQty} value={line?.[field] ?? 0} onChange={event => updateLine(field, Number(event.target.value))} className="w-20 rounded border px-2 py-1 text-right" aria-label={`${item.productName} ${field}`} /></td>)}
+                    <td className="px-2 py-1 text-right font-medium text-rose-700">{formatPeso((Number(line?.boQty) || 0) * item.unitPrice)}</td><td className="px-2 py-1 text-right font-medium">{formatPeso((Number(line?.acceptedQty) || 0) * item.unitPrice)}</td>
+                  </tr>;
+                })}</tbody>
+              </table></div>
+              {invalidQuantity && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Accepted, short, and BO quantities cannot exceed the loaded amount.</p>}
+              <div className="grid grid-cols-2 gap-2 rounded-lg border bg-white p-3 text-sm sm:grid-cols-3">
+                <div>Product bill (accepted): <strong>{formatPeso(orderTotal)}</strong></div>
+                <div>BO returned / deducted: <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
+                <div>Value before BO deduction: <strong>{formatPeso(orderTotal + currentBoTotal)}</strong></div>
+                <div>Previous balance: <strong>{formatPeso(previousBalance)}</strong></div>
+                <div>Total bill: <strong className="text-rose-700">{formatPeso(totalBill)}</strong></div>
+                <div>Amount collected: <strong>{formatPeso(collected)}</strong></div>
+                <div className="col-span-2 sm:col-span-3">Balance after cleared collection: <strong>{formatPeso(Math.max(0, totalBill - clearedCollected))}</strong>{stopForm.paymentMethod === 'Check' && <span className="ml-1 text-xs text-slate-500">(check remains pending until cleared)</span>}</div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div><label className="mb-1 block text-xs font-semibold">Received by</label><input value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" /></div>
+                <div><label className="mb-1 block text-xs font-semibold">Payment Method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="w-full rounded border px-3 py-2 text-sm"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Check">Bank Check</option></select></div>
+                <div><label className="mb-1 block text-xs font-semibold">Amount Collected (₱)</label><input type="number" min={0} max={totalBill} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: Number(e.target.value) || 0 })} className="w-full rounded border px-3 py-2 text-sm" /></div>
+                {stopForm.paymentMethod !== 'Cash' && <div><label className="mb-1 block text-xs font-semibold">Payment Reference *</label><input value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" />{stopForm.paymentMethod === 'Check' && <div className="mt-2 grid grid-cols-2 gap-2"><input value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} placeholder="Bank name" className="w-full rounded border px-3 py-2 text-sm" /><input type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" /></div>}</div>}
+                <div className="md:col-span-2"><label className="mb-1 block text-xs font-semibold">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" placeholder="Short items and BO are excluded from the bill automatically." /></div>
+              </div>
+              <div className="flex justify-end gap-2"><button type="button" onClick={() => setStopForm(null)} className="rounded border px-4 py-2 text-sm">Cancel</button><button type="button" onClick={() => handleRecordStop(stop.id)} disabled={submitting || invalidQuantity} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{submitting ? 'Saving…' : 'Save Delivery and Payment'}</button></div>
+            </div>}
+          </div>;
+        })}
+      </div>}
+    </div>
+  );
 }
 // â”€â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function OrdersDelivery() {

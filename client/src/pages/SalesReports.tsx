@@ -20,7 +20,11 @@ interface Invoice {
   customer: { id: string; name: string };
   deliveryRun?: { runNumber: string };
   totalAmount: number;
+  billableProducts: number;
+  boDeductionAmount: number;
+  priorBalance: number;
   paidAmount: number;
+  amountCollected: number;
   balance: number;
   status: 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERDUE';
   createdAt: string;
@@ -178,12 +182,17 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
             </div>
             <hr className="my-2" />
             <div className="space-y-1 mb-3">
+              <div className="flex justify-between"><span>Products before BO deduction</span><span>{formatPeso(invoice.billableProducts + invoice.boDeductionAmount)}</span></div>
+              {invoice.boDeductionAmount > 0 && <div className="flex justify-between text-rose-700"><span>BO returned / credited</span><span>−{formatPeso(invoice.boDeductionAmount)}</span></div>}
+              <div className="flex justify-between"><span>Net product bill</span><span>{formatPeso(invoice.billableProducts)}</span></div>
+              {invoice.priorBalance > 0 && <div className="flex justify-between"><span>Previous balance</span><span>{formatPeso(invoice.priorBalance)}</span></div>}
               <div className="flex justify-between font-semibold">
-                <span>Total Amount</span><span>{formatPeso(invoice.totalAmount)}</span>
+                <span>Total Bill</span><span>{formatPeso(invoice.totalAmount)}</span>
               </div>
               <div className="flex justify-between text-green-700">
-                <span>Amount Paid</span><span>{formatPeso(invoice.paidAmount)}</span>
+                <span>Amount Collected</span><span>{formatPeso(invoice.amountCollected)}</span>
               </div>
+              <div className="flex justify-between text-slate-600"><span>Applied to balance</span><span>{formatPeso(invoice.paidAmount)}</span></div>
               <div className={`flex justify-between font-bold ${invoice.balance > 0 ? 'text-red-600' : 'text-green-700'}`}>
                 <span>Balance Due</span><span>{formatPeso(invoice.balance)}</span>
               </div>
@@ -227,8 +236,13 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
           <p><strong>Customer:</strong> {invoice.customer.name}</p>
           {invoice.deliveryRun && <p><strong>Delivery Run:</strong> {invoice.deliveryRun.runNumber}</p>}
           <hr className="my-3" />
-          <div className="flex justify-between font-semibold"><span>Total Amount</span><span>{formatPeso(invoice.totalAmount)}</span></div>
-          <div className="flex justify-between"><span>Amount Paid</span><span>{formatPeso(invoice.paidAmount)}</span></div>
+          <div className="flex justify-between"><span>Products before BO deduction</span><span>{formatPeso(invoice.billableProducts + invoice.boDeductionAmount)}</span></div>
+          {invoice.boDeductionAmount > 0 && <div className="flex justify-between text-rose-700"><span>BO returned / credited</span><span>−{formatPeso(invoice.boDeductionAmount)}</span></div>}
+          <div className="flex justify-between"><span>Net product bill</span><span>{formatPeso(invoice.billableProducts)}</span></div>
+          {invoice.priorBalance > 0 && <div className="flex justify-between"><span>Previous balance</span><span>{formatPeso(invoice.priorBalance)}</span></div>}
+          <div className="flex justify-between font-semibold"><span>Total Bill</span><span>{formatPeso(invoice.totalAmount)}</span></div>
+          <div className="flex justify-between text-green-700"><span>Amount Collected</span><span>{formatPeso(invoice.amountCollected)}</span></div>
+          <div className="flex justify-between"><span>Applied to balance</span><span>{formatPeso(invoice.paidAmount)}</span></div>
           <div className="flex justify-between font-bold"><span>Balance Due</span><span>{formatPeso(invoice.balance)}</span></div>
           {invoice.payments.length > 0 && (
             <>
@@ -435,7 +449,11 @@ function ReceiptsTab() {
         customer: { id: row.customerId, name: row.storeName },
         deliveryRun: row.deliveryStop?.deliveryRun,
         totalAmount: Number(row.netAmountDue),
+        billableProducts: Number(row.billableProductAmount) || 0,
+        boDeductionAmount: Number(row.boDeductionAmount) || 0,
+        priorBalance: Number(row.priorBalance) || 0,
         paidAmount: Number(row.totalPaid),
+        amountCollected: (row.payments ?? []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0),
         balance: Number(row.balanceRemaining),
         status: String(row.paymentStatus).toUpperCase(),
         createdAt: row.invoiceDate,
@@ -498,14 +516,14 @@ function ReceiptsTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Invoice #', 'Date', 'Customer', 'Delivery Run', 'Amount', 'Paid', 'Balance', 'Status', 'Actions'].map(h => (
+                  {['Invoice #', 'Date', 'Customer', 'Delivery Run', 'Amount', 'BO Deduction', 'Collected', 'Applied', 'Balance', 'Status', 'Actions'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
                 {invoices.length === 0 ? (
-                  <tr><td colSpan={9} className="text-center py-10 text-gray-400">No invoices found.</td></tr>
+                  <tr><td colSpan={11} className="text-center py-10 text-gray-400">No invoices found.</td></tr>
                 ) : invoices.map(inv => (
                   <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-sm font-mono font-semibold text-rose-700">{inv.invoiceNumber}</td>
@@ -513,7 +531,9 @@ function ReceiptsTab() {
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{inv.customer.name}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{inv.deliveryRun?.runNumber ?? '—'}</td>
                     <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap">{formatPeso(inv.totalAmount)}</td>
-                    <td className="px-4 py-3 text-sm text-green-700 text-right whitespace-nowrap">{formatPeso(inv.paidAmount)}</td>
+                    <td className="px-4 py-3 text-sm text-rose-700 text-right whitespace-nowrap">{inv.boDeductionAmount > 0 ? `−${formatPeso(inv.boDeductionAmount)}` : '—'}</td>
+                    <td className="px-4 py-3 text-sm text-green-700 text-right whitespace-nowrap">{formatPeso(inv.amountCollected)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 text-right whitespace-nowrap">{formatPeso(inv.paidAmount)}</td>
                     <td className={`px-4 py-3 text-sm text-right font-semibold whitespace-nowrap ${inv.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {formatPeso(inv.balance)}
                     </td>

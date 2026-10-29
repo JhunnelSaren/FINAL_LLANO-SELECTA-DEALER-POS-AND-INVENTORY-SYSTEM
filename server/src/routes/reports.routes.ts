@@ -66,6 +66,7 @@ router.get('/sales', authenticateToken, async (req, res: Response) => {
         'Date': inv.invoiceDate.toISOString().split('T')[0],
         'Store Name': inv.storeName,
         'Billable Products (₱)': inv.billableProductAmount,
+        'BO Deduction (₱)': inv.boDeductionAmount,
         'Net Amount Due (₱)': inv.netAmountDue,
         'Amount Paid (₱)': inv.totalPaid,
         'Balance (₱)': inv.balanceRemaining,

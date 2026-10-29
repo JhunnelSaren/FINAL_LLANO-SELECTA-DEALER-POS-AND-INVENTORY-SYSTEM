@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import prisma from '../db.js';
 import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
 
@@ -352,6 +353,7 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
 
     // 1. Calculate accepted, missing, BO refused
     let billableProductAmount = 0;
+    let boDeductionAmount = 0;
     const itemUpdates: { id: string; data: any }[] = [];
     const boDiscrepanciesToCreate: any[] = [];
 
@@ -373,13 +375,15 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
         // SAFEGUARD: Billable Product Amount = actual saleable accepted quantity * unit price
         const lineBillable = accepted * unitPrice;
         billableProductAmount += lineBillable;
+        boDeductionAmount += boRefused * unitPrice;
 
         itemUpdates.push({ id: existingItem.id, data: { acceptedQty: accepted, missingQty: missing, boRefusedQty: boRefused, intactReturnedQty: intactReturned, notes: line.notes || null } });
 
         // Record BO Refused discrepancy
         if (boRefused > 0) {
           boDiscrepanciesToCreate.push({
-            id: `BO-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 1000)}`,
+            id: `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+            customerId: customer.id,
             deliveryRef: stop.deliveryRun.runNumber,
             storeName: stop.storeName,
             productId: existingItem.productId,
@@ -390,8 +394,10 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
             totalDeduction: Number((boRefused * unitPrice).toFixed(2)),
             reason: `BO/melted refused by ${stop.storeName} and brought back in van`,
             reportedBy: stop.deliveryRun.collector || req.user?.name || 'Collector',
-            disposition: 'Pending',
-            notes: `Refused at store stop during delivery run ${stop.deliveryRun.runNumber}`,
+            disposition: 'Refunded',
+            dispositionBy: 'SELECTA',
+            dispositionAt: new Date(),
+            notes: `BO credit of ₱${(boRefused * unitPrice).toFixed(2)} is shown on the customer receipt. Refused at store stop during delivery run ${stop.deliveryRun.runNumber}`,
           });
         }
       }
@@ -434,13 +440,13 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
       const invoice = await tx.customerInvoice.upsert({
         where: { deliveryStopId: stop.id },
         update: {
-          billableProductAmount, priorBalance, netAmountDue, totalPaid: clearedPaymentAmount, balanceRemaining,
+          billableProductAmount, boDeductionAmount, priorBalance, netAmountDue, totalPaid: clearedPaymentAmount, balanceRemaining,
           paymentStatus,
           collectorName: stop.deliveryRun.collector, customerSignature: recipientName?.trim() || null, notes,
         },
         create: {
           invoiceNumber, deliveryStopId: stop.id, customerId: stop.customerId, storeName: stop.storeName,
-          invoiceDate: new Date(), billableProductAmount, otherCharges: 0, approvedDiscounts: 0,
+          invoiceDate: new Date(), billableProductAmount, boDeductionAmount, otherCharges: 0, approvedDiscounts: 0,
           priorBalance, netAmountDue, totalPaid: clearedPaymentAmount, balanceRemaining,
           paymentStatus,
           collectorName: stop.deliveryRun.collector, customerSignature: recipientName?.trim() || null, notes,

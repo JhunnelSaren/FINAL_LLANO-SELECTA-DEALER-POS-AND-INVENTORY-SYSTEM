@@ -39,10 +39,21 @@ interface Payment {
   reference: string;
 }
 
+interface CustomerBOHistory {
+  id: string;
+  date: string;
+  productName: string;
+  quantity: number;
+  amount: number;
+  disposition: string;
+  notes?: string | null;
+}
+
 interface CustomerHistory {
   customer: Customer;
   bookings: Booking[];
   payments: Payment[];
+  boRecords: CustomerBOHistory[];
   balance: number;
 }
 
@@ -220,6 +231,7 @@ function StoresTab() {
         customer: { id: store.id, name: store.storeName, contactPerson: store.ownerName, phone: store.contact ?? '', address: store.address ?? '', area: store.area, route: store.route ?? '', outstandingBalance: store.currentBalance ?? 0, isActive: store.status === 'Active', createdAt: store.dateAdded ?? store.createdAt },
         bookings: (data.bookings ?? []).map((b: any) => ({ id: b.id, bookingNumber: b.bookingNumber, date: b.bookingDate, total: b.subtotal, status: b.status })),
         payments: (data.invoices ?? []).flatMap((invoice: any) => (invoice.payments ?? []).map((p: any) => ({ id: p.id, date: p.recordedAt, amount: p.amount, method: p.paymentMethod, reference: p.referenceNumber ?? '' }))),
+        boRecords: (data.boDiscrepancies ?? []).map((bo: any) => ({ id: bo.id, date: bo.createdAt, productName: bo.productName, quantity: bo.quantity, amount: Number(bo.totalDeduction) || 0, disposition: bo.disposition || 'Pending', notes: bo.notes })),
         balance: store.currentBalance ?? 0,
       });
     } catch {
@@ -429,6 +441,37 @@ function StoresTab() {
                           <td className="px-3 py-2 text-gray-600">{formatDate(b.date)}</td>
                           <td className="px-3 py-2 font-medium">{formatPeso(b.total)}</td>
                           <td className="px-3 py-2 capitalize text-gray-600">{b.status}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* BO credits / refunds */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Bad Order Deductions &amp; Refund History</h3>
+                <div className="overflow-x-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Date</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Product</th>
+                        <th className="px-3 py-2 text-right font-semibold text-gray-600">Qty</th>
+                        <th className="px-3 py-2 text-right font-semibold text-gray-600">BO Deduction</th>
+                        <th className="px-3 py-2 text-left font-semibold text-gray-600">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {historyCustomer.boRecords.length === 0 ? (
+                        <tr><td colSpan={5} className="py-4 text-center text-gray-400">No BO deductions or refunds</td></tr>
+                      ) : historyCustomer.boRecords.map(bo => (
+                        <tr key={bo.id} className="border-t border-gray-50">
+                          <td className="px-3 py-2 text-gray-600">{formatDate(bo.date)}</td>
+                          <td className="px-3 py-2 text-gray-700">{bo.productName}{bo.notes && <span className="block text-xs text-gray-400">{bo.notes}</span>}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{bo.quantity}</td>
+                          <td className="px-3 py-2 text-right font-medium text-rose-700">{formatPeso(bo.amount)}</td>
+                          <td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${bo.disposition === 'Refunded' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{bo.disposition === 'Refunded' ? 'Refunded by SELECTA' : 'Pending'}</span></td>
                         </tr>
                       ))}
                     </tbody>

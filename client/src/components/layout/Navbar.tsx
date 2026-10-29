@@ -129,11 +129,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
       {/* ─── Main Navigation Bar ──────────────────────────────────────────────── */}
       <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between gap-2 h-16">
           {/* Brand Identity */}
-          <div
+          <button
+            type="button"
             onClick={() => setActiveTab('dashboard')}
-            className="flex items-center gap-3 cursor-pointer select-none group"
+            aria-label="Go to Dashboard"
+            className="flex shrink-0 items-center gap-2.5 cursor-pointer select-none group text-left"
           >
             <div className="relative flex h-12 w-14 items-center justify-center overflow-hidden rounded-xl bg-white group-hover:scale-105 transition-transform">
               <img src="/llano-selecta-logo.png" alt="Llano Selecta logo" className="h-full w-full object-contain" />
@@ -148,36 +150,38 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                   POS
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 font-medium tracking-normal mt-0.5">
+              <p className="hidden sm:block text-[11px] text-slate-500 font-medium tracking-normal mt-0.5">
                 Authorized Cold-Chain Dealership
               </p>
             </div>
-          </div>
+          </button>
 
           {/* Primary Navigation Tabs */}
-          <nav className="hidden lg:flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/60 shadow-inner">
+          <nav aria-label="Main modules" className="hidden xl:flex shrink-0 items-center gap-0.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shadow-inner">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-150 ${
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`flex shrink-0 items-center gap-1.5 px-2.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-150 ${
                     isActive
                       ? 'bg-white text-rose-700 shadow-sm border border-slate-200/80'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
-                  <Icon className={`w-4 h-4 transition-colors ${isActive ? 'text-rose-600' : 'text-slate-400'}`} />
-                  <span>{item.label}</span>
+                  <Icon className={`w-3.5 h-3.5 transition-colors ${isActive ? 'text-rose-600' : 'text-slate-400'}`} />
+                  <span className="whitespace-nowrap">{item.label}</span>
                 </button>
               );
             })}
           </nav>
 
           {/* Right Header Actions: Settings & Staff Menu */}
-          <div className="flex items-center gap-2.5">
+        <div className="flex shrink-0 items-center gap-1.5">
             <div className="relative">
               <button onClick={() => setNotificationsOpen(value => !value)} title="Notifications" className="relative rounded-xl border border-slate-200 bg-white p-2.5 text-slate-600 hover:bg-slate-50">
                 <Bell className="h-4 w-4" />
@@ -275,26 +279,28 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         </div>
 
         {/* ─── Mobile Secondary Nav Strip ────────────────────────────────────── */}
-        <div className="flex lg:hidden overflow-x-auto py-2.5 gap-1.5 border-t border-slate-100 scrollbar-none">
+        <nav aria-label="Main modules" className="grid grid-cols-2 sm:grid-cols-3 xl:hidden py-1.5 gap-1 border-t border-slate-100">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex min-w-0 w-full items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[11px] font-semibold transition-all ${
                   isActive
                     ? 'bg-rose-600 text-white shadow-sm'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">{item.label}</span>
               </button>
             );
           })}
-        </div>
+        </nav>
       </div>
     </header>
   );

@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import prisma from '../db.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 import * as xlsx from 'xlsx';
@@ -89,6 +90,87 @@ router.get('/bo', authenticateToken, async (req, res: Response) => {
   }
 });
 
+// POST /api/inventory/bo (Manually record customer BO and quarantine returned stock)
+router.post('/bo', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+  const customerId = String(req.body.customerId || '').trim();
+  const productId = String(req.body.productId || '').trim();
+  const quantity = Number(req.body.quantity);
+  const reason = String(req.body.reason || '').trim();
+  const notes = String(req.body.notes || '').trim();
+  const disposition = String(req.body.disposition || 'Pending');
+
+  if (!customerId || !productId || !Number.isInteger(quantity) || quantity < 1 || !reason) {
+    return res.status(400).json({ error: 'Choose a customer and product, enter a positive whole-number quantity, and provide a reason.' });
+  }
+  if (!['Pending', 'Refunded'].includes(disposition)) {
+    return res.status(400).json({ error: 'BO status must be Pending or Refunded.' });
+  }
+  if (disposition === 'Refunded' && !notes) {
+    return res.status(400).json({ error: 'Add the refund or credit details before marking this BO as refunded.' });
+  }
+
+  try {
+    const [customer, product] = await Promise.all([
+      prisma.customer.findUnique({ where: { id: customerId } }),
+      prisma.product.findUnique({ where: { id: productId } }),
+    ]);
+    if (!customer) return res.status(404).json({ error: 'Customer store not found.' });
+    if (!product) return res.status(404).json({ error: 'Product not found.' });
+
+    const unitPrice = Number(product.sellingPrice);
+    const totalDeduction = Number((unitPrice * quantity).toFixed(2));
+    const id = `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
+    const staffName = req.user?.name || 'Dealer Admin';
+    const result = await prisma.$transaction(async tx => {
+      const updatedProduct = await tx.product.update({
+        where: { id: product.id },
+        data: { quarantineStock: { increment: quantity } },
+      });
+      const record = await tx.boDiscrepancy.create({
+        data: {
+          id,
+          customerId: customer.id,
+          storeName: customer.storeName,
+          productId: product.id,
+          productName: product.name,
+          category: product.category,
+          quantity,
+          unitPrice,
+          totalDeduction,
+          reason,
+          reportedBy: staffName,
+          disposition,
+          dispositionBy: disposition === 'Refunded' ? staffName : null,
+          dispositionAt: disposition === 'Refunded' ? new Date() : null,
+          notes: notes || null,
+        },
+      });
+      await tx.inventoryLedger.create({
+        data: {
+          productId: product.id,
+          productName: product.name,
+          category: product.category,
+          movementType: 'BO Quarantine',
+          changeQty: quantity,
+          runningSaleable: updatedProduct.stock,
+          runningQuarantine: updatedProduct.quarantineStock,
+          reference: id,
+          staffName,
+          notes: `Manual customer BO from ${customer.storeName}: ${reason}`,
+        },
+      });
+      return record;
+    });
+
+    await recordAudit('Record Customer BO', 'Inventory', staffName, {
+      boId: id, storeName: customer.storeName, product: product.name, quantity, totalDeduction, disposition,
+    });
+    res.status(201).json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/inventory/bo/:id/disposition (Admin authorized outcome for BO stock)
 router.post('/bo/:id/disposition', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
@@ -104,24 +186,27 @@ router.post('/bo/:id/disposition', authenticateToken, requireRole('Admin'), asyn
       return res.status(400).json({ error: 'BO status must be Pending or Refunded.' });
     }
 
-    if (bo.disposition === 'Refunded' && disposition === 'Refunded') {
-      return res.status(409).json({ error: 'This BO has already been recorded as refunded.' });
+    const cleanNotes = String(notes || '').trim();
+    if (disposition === 'Refunded' && !cleanNotes && !bo.notes) {
+      return res.status(400).json({ error: 'Add the refund or credit details before marking this BO as refunded.' });
     }
 
     const updated = await prisma.boDiscrepancy.update({
       where: { id },
       data: {
         disposition,
-        dispositionBy: req.user?.name || 'Dealer Admin',
-        dispositionAt: new Date(),
-        notes: notes ? `${bo.notes ? bo.notes + ' | ' : ''}Refund: ${notes}` : undefined,
+        dispositionBy: disposition === 'Refunded' ? req.user?.name || 'Dealer Admin' : null,
+        dispositionAt: disposition === 'Refunded' ? new Date() : null,
+        notes: cleanNotes ? `${bo.notes ? bo.notes + ' | ' : ''}${disposition}: ${cleanNotes}` : bo.notes,
       },
     });
 
     await recordAudit('Update BO Disposition', 'Inventory', req.user?.name || 'Staff', {
       boId: id,
       product: bo.productName,
+      previousDisposition: bo.disposition,
       disposition,
+      totalDeduction: bo.totalDeduction,
     });
 
     res.json(updated);

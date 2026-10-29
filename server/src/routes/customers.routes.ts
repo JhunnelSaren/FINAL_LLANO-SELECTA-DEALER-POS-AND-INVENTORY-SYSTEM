@@ -177,7 +177,7 @@ router.get('/:id/history', authenticateToken, async (req, res: Response) => {
     });
 
     const boDiscrepancies = await prisma.boDiscrepancy.findMany({
-      where: { storeName: customer.storeName },
+      where: { OR: [{ customerId: id }, { storeName: customer.storeName }] },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });

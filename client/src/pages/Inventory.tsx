@@ -33,8 +33,10 @@ interface LedgerEntry {
 
 interface BORecord {
   id: string;
+  storeName: string;
   product: { name: string; sku: string };
   qty: number;
+  totalDeduction: number;
   reason: string;
   status: string;
   createdAt: string;
@@ -639,14 +641,16 @@ function StockMovements({ showToast }: { showToast: (msg: string, type?: 'succes
 
 // ─── Damaged / BO Tab ─────────────────────────────────────────────────────────
 
-function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: string, type?: 'success' | 'error') => void }) {
+function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: string, type?: 'success' | 'error' | 'warning') => void }) {
   const [records, setRecords] = useState<BORecord[]>([]);
+  const [customers, setCustomers] = useState<{ id: string; storeName: string; area: string }[]>([]);
+  const [products, setProducts] = useState<{ id: string; name: string; sku: string; category: string; sellingPrice: number }[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Dispose modal
-  const [disposeTarget, setDisposeTarget] = useState<BORecord | null>(null);
-  const [disposeNotes, setDisposeNotes] = useState('');
-  const [disposing, setDisposing] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [addForm, setAddForm] = useState({ customerId: '', productId: '', quantity: 1, reason: '', disposition: 'Pending', notes: '' });
+  const [dispositionTarget, setDispositionTarget] = useState<BORecord | null>(null);
+  const [dispositionForm, setDispositionForm] = useState({ disposition: 'Pending', notes: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -655,8 +659,8 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
       if (!res.ok) throw new Error('Failed to load BO records');
       const data = await res.json();
       setRecords((data.records ?? []).map((r: any) => ({
-        id: r.id, product: { name: r.productName, sku: r.productId }, qty: r.quantity,
-        reason: r.reason, status: r.disposition === 'Refunded' ? 'REFUNDED' : 'PENDING',
+        id: r.id, storeName: r.storeName || '—', product: { name: r.productName, sku: r.productId }, qty: r.quantity,
+        totalDeduction: Number(r.totalDeduction) || 0, reason: r.reason, status: r.disposition === 'Refunded' ? 'REFUNDED' : 'PENDING',
         createdAt: r.createdAt, disposition: r.disposition, dispositionNotes: r.notes,
       })));
     } catch (e: any) {
@@ -668,68 +672,121 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
 
   useEffect(() => { load(); }, [load]);
 
-  const openDispose = (r: BORecord) => {
-    setDisposeTarget(r);
-    setDisposeNotes('');
-  };
+  useEffect(() => {
+    Promise.all([
+      apiFetch('/api/customers?status=Active').then(async res => {
+        if (!res.ok) throw new Error('Could not load customers');
+        return res.json();
+      }),
+      apiFetch('/api/products').then(async res => {
+        if (!res.ok) throw new Error('Could not load products');
+        return res.json();
+      }),
+    ]).then(([customerRows, productRows]) => {
+      setCustomers((Array.isArray(customerRows) ? customerRows : []).map((c: any) => ({ id: c.id, storeName: c.storeName, area: c.area })));
+      setProducts((Array.isArray(productRows) ? productRows : []).map((p: any) => ({ id: p.id, name: p.name, sku: p.sku || p.id, category: p.category, sellingPrice: Number(p.sellingPrice) || 0 })));
+    }).catch((e: any) => showToast(e.message || 'Could not load customer and product choices', 'error'));
+  }, [showToast]);
 
-  const submitDispose = async () => {
-    if (!disposeTarget) return;
-    if (!disposeNotes.trim()) { showToast('Notes are required', 'error'); return; }
-    setDisposing(true);
+  const selectedProduct = products.find(p => p.id === addForm.productId);
+  const manualBoTotal = (Number(addForm.quantity) || 0) * (selectedProduct?.sellingPrice || 0);
+
+  const submitManualBO = async () => {
+    if (!addForm.customerId || !addForm.productId || !addForm.reason.trim() || !Number.isInteger(Number(addForm.quantity)) || Number(addForm.quantity) < 1) {
+      showToast('Choose a store and product, enter a whole-number quantity, and add a reason.', 'warning');
+      return;
+    }
+    if (addForm.disposition === 'Refunded' && !addForm.notes.trim()) {
+      showToast('Add refund or credit details before marking the BO as refunded.', 'warning');
+      return;
+    }
+    setSaving(true);
     try {
-      const res = await apiFetch(`/api/inventory/bo/${disposeTarget.id}/disposition`, {
+      const res = await apiFetch('/api/inventory/bo', {
         method: 'POST',
-        body: JSON.stringify({ disposition: 'Refunded', notes: disposeNotes.trim() }),
+        body: JSON.stringify({ ...addForm, quantity: Number(addForm.quantity) }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? 'Refund failed');
+        throw new Error(err.error || 'Could not record BO');
       }
-      showToast('BO refund recorded successfully', 'success');
-      setDisposeTarget(null);
-      load();
+      showToast(`BO recorded (${formatPeso(manualBoTotal)}) and added to quarantine stock`, 'success');
+      setShowAddForm(false);
+      setAddForm({ customerId: '', productId: '', quantity: 1, reason: '', disposition: 'Pending', notes: '' });
+      await load();
     } catch (e: any) {
-      showToast(e.message ?? 'Dispose failed', 'error');
+      showToast(e.message || 'Could not record BO', 'error');
     } finally {
-      setDisposing(false);
+      setSaving(false);
+    }
+  };
+
+  const submitDisposition = async () => {
+    if (!dispositionTarget) return;
+    if (dispositionForm.disposition === 'Refunded' && !dispositionForm.notes.trim() && !dispositionTarget.dispositionNotes) {
+      showToast('Add refund or credit details before marking the BO as refunded.', 'warning');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiFetch(`/api/inventory/bo/${dispositionTarget.id}/disposition`, {
+        method: 'POST',
+        body: JSON.stringify({ disposition: dispositionForm.disposition, notes: dispositionForm.notes.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? 'Could not update BO status');
+      }
+      showToast(`BO status updated to ${dispositionForm.disposition.toLowerCase()}`, 'success');
+      setDispositionTarget(null);
+      await load();
+    } catch (e: any) {
+      showToast(e.message ?? 'Could not update BO status', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
     <div>
+      {isAdmin && <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div><h3 className="font-semibold text-gray-800">Customer BO &amp; damaged returns</h3><p className="text-xs text-gray-500 mt-1">Delivery BOs appear here immediately and are added to quarantine stock at route reconciliation. Manual BO entries update quarantine stock now.</p></div>
+        <button type="button" onClick={() => setShowAddForm(true)} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">+ Add Customer BO</button>
+      </div>}
       {loading ? <Spinner /> : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
           <table className="min-w-full text-sm">
             <thead className="bg-rose-50 text-rose-800 text-xs uppercase tracking-wide">
               <tr>
-                {['Date', 'Product', 'Qty', 'Reason / Type', 'Status', 'Actions'].map(h => (
+                {['Date', 'Customer / Store', 'Product', 'Qty', 'BO Total', 'Reason / Type', 'Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
               {records.length === 0 ? (
-                <tr><td colSpan={6} className="py-12 text-center text-gray-400">No BO / damaged records found.</td></tr>
+                <tr><td colSpan={8} className="py-12 text-center text-gray-400">No BO / damaged records found.</td></tr>
               ) : records.map((r, i) => (
                 <tr key={r.id} className={i % 2 === 0 ? 'bg-white hover:bg-rose-50/40' : 'bg-gray-50/50 hover:bg-rose-50/40'}>
                   <td className="px-4 py-3 whitespace-nowrap text-gray-500">{formatDate(r.createdAt)}</td>
+                  <td className="px-4 py-3 text-gray-700">{r.storeName}</td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-gray-800">{r.product.name}</div>
                     <div className="text-xs text-gray-400 font-mono">{r.product.sku}</div>
                   </td>
                   <td className="px-4 py-3 tabular-nums font-semibold text-gray-800">{r.qty}</td>
+                  <td className="px-4 py-3 tabular-nums font-semibold text-gray-800 whitespace-nowrap">{formatPeso(r.totalDeduction)}</td>
                   <td className="px-4 py-3 text-gray-600">{r.reason}</td>
                   <td className="px-4 py-3">
                     <BOStatusBadge status={r.status} />
                   </td>
                   <td className="px-4 py-3">
-                    {isAdmin && r.status === 'PENDING' && (
+                    {isAdmin && (
                       <button
-                        onClick={() => openDispose(r)}
+                        onClick={() => { setDispositionTarget(r); setDispositionForm({ disposition: r.disposition || 'Pending', notes: '' }); }}
                         className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium transition"
                       >
-                        Mark Refunded
+                        Update
                       </button>
                     )}
                   </td>
@@ -740,41 +797,59 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
         </div>
       )}
 
-      {/* Dispose Modal */}
-      {disposeTarget && (
-        <Modal title={`Record BO Refund — ${disposeTarget.product.name}`} onClose={() => setDisposeTarget(null)}>
+      {showAddForm && (
+        <Modal title="Add Customer BO" onClose={() => !saving && setShowAddForm(false)}>
           <div className="space-y-4">
-            <p className="text-sm text-gray-500">
-              Qty: <strong>{disposeTarget.qty}</strong> &nbsp;|&nbsp; Reason: <strong>{disposeTarget.reason}</strong>
-            </p>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">New status</label>
-              <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm font-semibold text-emerald-700">Refunded</div>
+            <label className="block text-sm font-medium text-gray-700">Customer / Store
+              <select value={addForm.customerId} onChange={e => setAddForm({ ...addForm, customerId: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select store</option>{customers.map(c => <option key={c.id} value={c.id}>{c.storeName} · {c.area}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-gray-700">Product
+              <select value={addForm.productId} onChange={e => setAddForm({ ...addForm, productId: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="">Select product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name} · {formatPeso(p.sellingPrice)}</option>)}
+              </select>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label className="block text-sm font-medium text-gray-700">Quantity
+                <input type="number" min={1} step={1} value={addForm.quantity} onChange={e => setAddForm({ ...addForm, quantity: Number(e.target.value) || 0 })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              </label>
+              <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-gray-700"><span className="block text-xs text-gray-500">Customer BO total</span><strong>{formatPeso(manualBoTotal)}</strong></div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes <span className="text-red-500">*</span></label>
-              <textarea
-                value={disposeNotes}
-                onChange={e => setDisposeNotes(e.target.value)}
-                rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300 resize-none"
-                placeholder="Enter the refund or credit reference…"
-              />
+            <label className="block text-sm font-medium text-gray-700">Reason
+              <input value={addForm.reason} onChange={e => setAddForm({ ...addForm, reason: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Damaged, melted, or refused product" />
+            </label>
+            <label className="block text-sm font-medium text-gray-700">Refund status
+              <select value={addForm.disposition} onChange={e => setAddForm({ ...addForm, disposition: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="Pending">Pending</option><option value="Refunded">Refunded by SELECTA</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-gray-700">Refund / credit details {addForm.disposition === 'Refunded' && <span className="text-red-500">*</span>}
+              <textarea value={addForm.notes} onChange={e => setAddForm({ ...addForm, notes: e.target.value })} rows={2} className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Reference or note for the customer history" />
+            </label>
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setShowAddForm(false)} disabled={saving} className="flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={submitManualBO} disabled={saving} className="flex-1 rounded-lg bg-rose-600 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">{saving ? 'Saving…' : 'Add BO to Inventory'}</button>
             </div>
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setDisposeTarget(null)}
-                className="flex-1 border border-gray-300 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submitDispose}
-                disabled={disposing}
-                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg py-2 text-sm font-semibold transition disabled:opacity-60"
-              >
-                {disposing ? 'Saving…' : 'Confirm Refund'}
-              </button>
+          </div>
+        </Modal>
+      )}
+
+      {dispositionTarget && (
+        <Modal title={`Update BO — ${dispositionTarget.product.name}`} onClose={() => !saving && setDispositionTarget(null)}>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">{dispositionTarget.storeName} · Qty: <strong>{dispositionTarget.qty}</strong> · BO total: <strong>{formatPeso(dispositionTarget.totalDeduction)}</strong></p>
+            <label className="block text-sm font-medium text-gray-700">Status
+              <select value={dispositionForm.disposition} onChange={e => setDispositionForm({ ...dispositionForm, disposition: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+                <option value="Pending">Pending</option><option value="Refunded">Refunded by SELECTA</option>
+              </select>
+            </label>
+            <label className="block text-sm font-medium text-gray-700">Refund / status note {dispositionForm.disposition === 'Refunded' && !dispositionTarget.dispositionNotes && <span className="text-red-500">*</span>}
+              <textarea value={dispositionForm.notes} onChange={e => setDispositionForm({ ...dispositionForm, notes: e.target.value })} rows={3} className="mt-1 w-full resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Add refund reference or status note" />
+            </label>
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={() => setDispositionTarget(null)} disabled={saving} className="flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={submitDisposition} disabled={saving} className="flex-1 rounded-lg bg-rose-600 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">{saving ? 'Saving…' : 'Save Status'}</button>
             </div>
           </div>
         </Modal>
