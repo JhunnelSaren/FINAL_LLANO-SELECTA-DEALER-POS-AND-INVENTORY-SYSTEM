@@ -1,0 +1,658 @@
+# PROJECT: LLANO SELECTA DEALER POS AND INVENTORY SYSTEM
+
+Act as a senior full-stack developer, database designer, QA engineer, and UI/UX designer.
+
+Build a complete, functional, user-friendly web application named **Llano Selecta Dealer POS and Inventory System** for a Selecta ice cream dealer operating in Valencia City, Bukidnon, San Fernando, and Cabanglasan, Philippines.
+
+The main goal is to replace the dealer's scattered Excel records and manual tracking with one organized system while keeping the interface extremely simple for non-technical staff.
+
+This must be a working system with persistent database records, functioning buttons and forms, correct inventory calculations, usable reports, and a complete end-to-end workflow. Do not stop at a design, prototype, or frontend mockup.
+
+## 1. FIRST: INSPECT THE EXISTING PROJECT
+
+Before changing any code:
+
+1. Inspect the existing workspace, folders, source files, dependencies, and database.
+2. Look for the Excel booking template, sample barcode photographs, and other business documents if they are available inside the workspace.
+3. If an Excel file is found, inspect its worksheets, columns, sample data, formulas, and booking layout. Use it as a reference for the booking entry, import, and export functions. Never overwrite the original file.
+4. If a freezer barcode photograph is available, use it to understand the evidence the business needs to record. Do not invent details that cannot be read.
+5. If these reference files are missing, continue implementation using the business rules in this prompt. Create an importable Excel booking template and document the assumptions.
+
+Prepare a concise implementation plan and database design, then proceed with implementation. Do not stop after presenting the plan. Do not ask unnecessary questions; make reasonable assumptions and put changeable business rules in Settings.
+
+## 2. TECHNOLOGY AND PROJECT STRUCTURE
+
+Preserve the existing project's working technology if it already has a suitable implementation.
+
+If the workspace is empty, use a simple, maintainable architecture:
+
+- Frontend: React, TypeScript, and Vite.
+- UI: Tailwind CSS with reusable components and accessible form controls.
+- Backend: Node.js and Express with TypeScript.
+- Database: Prisma ORM and SQLite for local development.
+- Authentication: secure password hashing and protected sessions.
+- File uploads: securely store barcode evidence photographs and relevant document attachments, with their paths and metadata recorded in the database.
+- Testing: use an appropriate testing framework for business logic and API behavior.
+
+Do not use localStorage as the primary database. Persistent records must survive browser refreshes, restarts, and logging out.
+
+Keep the project easy to run in VS Code. Avoid unnecessary microservices, complicated infrastructure, and excessive dependencies. Document how to move to a production database if the dealer later needs a shared, hosted system.
+
+Create a .env.example file, appropriate database migrations, seed/demo data, and a detailed README.md.
+
+## 3. SIMPLE UI REQUIREMENTS
+
+Use a clean, professional, modern business interface appropriate for a small Philippine ice cream dealership.
+
+The interface must be easy enough for a new staff member to understand without lengthy training.
+
+Use exactly five primary navigation items:
+
+1. Dashboard
+2. Orders & Delivery
+3. Inventory
+4. Stores & Freezers
+5. Sales & Reports
+
+Put Settings and Staff Management behind a small gear icon or a clearly labeled settings menu.
+
+Do not create separate main navigation items for every small function. Group related functions inside each main module using tabs, dropdown menus, and contextual action buttons.
+
+### Dashboard
+
+Display a clear overview using readable cards and compact tables:
+
+- Today's bookings and scheduled deliveries.
+- Orders waiting for the Selecta bodega request.
+- Stock expected to arrive.
+- Products currently in stock and products below their minimum level.
+- Deliveries in progress and deliveries awaiting reconciliation.
+- Outstanding customer balances.
+- Cash shortages, delivery discrepancies, and pending approvals.
+- Freezers due for their monthly barcode verification.
+- Current month's Selecta POS quota and progress.
+
+Every dashboard card should open the relevant filtered records when clicked.
+
+Avoid excessive charts, decorative animations, complicated graphs, and clutter.
+
+### Interface design rules
+
+- Use plain, understandable English labels.
+- Use Philippine peso formatting, such as ₱1,250.00.
+- Use Asia/Manila as the business timezone.
+- Use large, readable action buttons.
+- Use a clear search bar, date filters, route filters, and status filters.
+- Use tables with only important columns and an obvious View/Edit action.
+- Use confirmation dialogs for consequential actions.
+- Display helpful validation messages beside incorrect fields.
+- Clearly distinguish Draft, Pending, In Progress, Completed, Overdue, and Requires Attention.
+- Make the delivery workflow usable on a mobile phone as well as a desktop computer.
+- Every button, form, dropdown, filter, and export action must work.
+- Do not leave placeholder links, dummy buttons, or nonfunctional sample actions.
+- Do not display fake success messages when an operation fails.
+
+## 4. CORE MODULE: ORDERS & DELIVERY
+
+Place all booking, supplier-order tracking, receiving, preparation, delivery, and reconciliation processes inside this one main module.
+
+Use these sub-tabs:
+
+- Bookings
+- Bodega Order
+- Stock Receiving
+- Prepare & Load
+- Delivery
+- Delivery Reconciliation
+
+### A. Bookings
+
+The booker visits stores and records each customer's requested products and quantities.
+
+Each booking must contain:
+
+- Unique booking number.
+- Booking date and requested delivery date.
+- Delivery area and route.
+- Customer/store name.
+- Booker responsible for the booking.
+- Products, quantities, unit prices, and calculated totals.
+- Notes or special delivery instructions.
+- Booking status and timestamps.
+
+Provide a simple booking form with a customer search, product search, quantity fields, and automatic total calculations.
+
+Support multiple products per store and multiple stores per route.
+
+Allow the owner to edit or reopen bookings only when appropriate and record significant changes in the audit log.
+
+### Booking schedule
+
+Use the following defaults, but make them editable in Settings:
+
+- Monday: Valencia–San Fernando booking route.
+- Tuesday: Cabanglasan booking route.
+
+Support Batangan, San Isidro, Lumabayo, Valencia City, San Fernando, and the different Cabanglasan delivery areas through configurable customer locations and route assignments.
+
+Allow the owner to change the schedule when staff, holidays, stock arrivals, or other circumstances require it.
+
+### Booking documents
+
+Provide:
+
+- A printable booking sheet that resembles a useful paper order form.
+- Excel export using customer names, product names, quantities, and totals.
+- Excel import with column mapping and validation.
+- A consolidated booking summary showing the quantity of each product required across all stores.
+- A per-store booking sheet for the booker and owner.
+
+Show validation errors for unknown products, duplicate records, invalid quantities, and unmatched customers. Do not silently import incorrect data.
+
+### B. Bodega Order
+
+Llano already uses the official Selecta POS to order products from the Selecta bodega.
+
+The new application must not pretend to replace or directly integrate with this external POS.
+
+Provide a workflow for the owner to:
+
+1. Review consolidated bookings.
+2. Review the total quantities needed.
+3. Record that the order has been entered in the official Selecta POS.
+4. Record the official reference number, order date, expected arrival date, and staff responsible.
+5. Track the supplier order status.
+
+Allow the owner to compare requested quantities against quantities actually received.
+
+Do not assume a supplier order has been placed merely because a record exists in Llano's application.
+
+### C. Stock Receiving
+
+When the Selecta truck panel arrives, the checker records the actual delivery from the supplier.
+
+Capture:
+
+- Linked supplier order.
+- Supplier delivery or receipt reference.
+- Date and time received.
+- Truck plate number.
+- Name of the receiving staff member.
+- Product quantities expected and quantities physically received.
+- Damaged, melted, missing, or otherwise unacceptable items.
+- Notes and photograph of the signed supplier receipt when available.
+
+Use a simple item-by-item receiving checklist.
+
+Allow the checker to accept the actual quantity received instead of automatically accepting the ordered quantity.
+
+Record the supplier receipt as a completed or partially received transaction.
+
+Good products enter saleable inventory. Damaged or questionable products must be tracked separately as non-saleable stock.
+
+Never increase inventory simply because an order was requested.
+
+### D. Prepare & Load
+
+After receiving stock, the staff prepares each store's delivery.
+
+Provide a preparation screen that shows:
+
+- Store name.
+- Route and delivery date.
+- Booking number.
+- Requested quantities.
+- Available inventory.
+- Quantities allocated, picked, and loaded.
+- Unavailable or short quantities.
+
+Calculate consolidated picking totals so the team knows how much of each product to retrieve.
+
+Provide printable or downloadable box labels containing the store name, route, delivery date, and a useful summary of the box contents.
+
+Support the Bongo vehicle and a flexible delivery crew consisting of one driver and two loaders. Allow a backride or replacement staff member where needed.
+
+Record the actual driver, helpers, receipt collector, and loading staff assigned to each trip.
+
+Prevent dispatch when stock is unavailable unless the owner explicitly authorizes the exception.
+
+Track dispatched stock as in transit until the delivery is reconciled.
+
+### E. Delivery
+
+A delivery run can contain multiple stores.
+
+For every store, display the original booking, loaded products, and a simple actual-delivery entry form.
+
+Record:
+
+- Ordered quantity.
+- Loaded quantity.
+- Actual quantity delivered and accepted.
+- Missing or not-delivered quantity.
+- BO or melted quantity refused by the store and brought back.
+- Other approved adjustments.
+- Final amount to collect.
+- Payment received, payment method, and outstanding balance.
+- Name of the delivery staff and recipient.
+- Notes or evidence for discrepancies.
+
+The staff must be able to complete the delivery of one store and continue to the next store without losing the current progress.
+
+Use simple status buttons such as Start Delivery, Save Store Result, Mark Delivered, and Finish Route.
+
+Allow partial delivery, rescheduling, and documented exceptions.
+
+### F. Delivery Reconciliation
+
+When the vehicle returns, compare all store delivery records with the original route plan.
+
+Show:
+
+- Total products loaded.
+- Total products delivered and accepted.
+- Products not delivered but physically returned intact.
+- BO/melted products returned.
+- Items missing and not physically accounted for.
+- Amount expected from customers.
+- Cash collected.
+- GCash payments.
+- Check payments by clearing status.
+- Outstanding customer balances.
+- Total discrepancy and its explanation.
+
+Require unresolved stock or collection discrepancies to be reviewed before final route closure. Permit an authorized owner to approve an exception with a recorded reason.
+
+## 5. CORE MODULE: INVENTORY
+
+This is the dealer's internal inventory, separate from the official Selecta POS.
+
+Provide simple sub-tabs:
+
+- Stock on Hand
+- Stock Movements
+- Damaged / BO
+- Low Stock
+
+Each product should have:
+
+- Unique product ID or SKU.
+- Selecta product name.
+- Barcode when available.
+- Category.
+- Unit of measure.
+- Current selling price.
+- Cost or other valuation fields when available.
+- Minimum-stock threshold.
+- Active/inactive status.
+
+Maintain an auditable stock movement ledger.
+
+Record each stock movement from supplier receiving, picking, dispatch, sales, returned intact items, BO returns, approved adjustments, and stock counts.
+
+Keep saleable stock separate from damaged, melted, and quarantined stock.
+
+For each BO return, record the product, quantity, reason, original delivery, store, date, and staff member. Require a documented disposition such as pending inspection, approved write-off, or another authorized outcome.
+
+A BO return must never automatically become saleable inventory.
+
+When intact products are not delivered, return them to stock only after they are physically verified. If products cannot be accounted for, record a shortage for investigation instead of silently adding stock back.
+
+Prevent negative stock by default. If the owner permits an exceptional adjustment, record the reason and user.
+
+Add:
+
+- Manual physical stock counts.
+- Approved inventory adjustments.
+- Low-stock warnings.
+- Inventory valuation where the necessary costs are available.
+- Optional batch and expiry-date tracking when supplier data supports it.
+- Stock balance and movement reports.
+- Excel export.
+
+All stock values must be derived from database records and transactions, not hardcoded demo values.
+
+## 6. CORE MODULE: STORES & FREEZERS
+
+Use two simple tabs:
+
+- Stores
+- Freezers & Monthly Verification
+
+### A. Stores
+
+Maintain a customer/store directory with:
+
+- Store/customer code.
+- Store name.
+- Contact person and phone.
+- Municipality, barangay, area, and delivery route.
+- Delivery address or directions.
+- Active/inactive status.
+- Notes.
+- Outstanding balance summary.
+- Assigned freezer, when applicable.
+
+Include a fast search by store name, area, and customer code.
+
+Show the store's booking history, delivery history, receipts, payments, and BO records from its profile.
+
+Prevent accidental creation of duplicate stores.
+
+### B. Freezers & Monthly Verification
+
+Selecta owns the freezers provided to stores. Track the equipment as Selecta-owned assets and never automatically treat them as dealer-owned inventory or sold products.
+
+Each freezer record should include:
+
+- Unique freezer ID.
+- Barcode or serial number.
+- Assigned store.
+- Location.
+- Assignment and installation dates.
+- Status: Active, Under Maintenance, Returned, or Unassigned.
+- Date last verified.
+- Next monthly verification due date.
+- Verification history and photo evidence.
+
+Track the freezer-program payment separately:
+
+- Total amount: ₱10,000.
+- Product allocation: ₱9,000.
+- Processing fee: ₱1,000.
+
+Record the transaction date, customer, payment method, reference, and receipt. Make the accounting classification configurable rather than assuming the amount is a refundable deposit.
+
+### Monthly barcode verification
+
+Staff must continue using their existing Timemark app and cellphone to perform the actual barcode scan and required photo capture.
+
+Do not claim integration with Timemark unless an actual, documented and authorized integration becomes available.
+
+After the Timemark scan, staff can open the freezer record in Llano's system and record:
+
+- Verification month.
+- Date and time scanned.
+- Scanned barcode or serial number.
+- Staff member who performed the scan.
+- Uploaded photo evidence.
+- Notes and verification status.
+
+Allow the owner to review or reject incomplete evidence.
+
+Calculate the next monthly due date automatically and display Due Soon, Due, Completed, or Overdue.
+
+Prevent duplicate monthly records for the same freezer and verification period unless an authorized correction is made.
+
+Provide a printable/exportable monthly compliance report.
+
+## 7. CORE MODULE: SALES & REPORTS
+
+Group receipts, payment collection, reconciliation, quota tracking, and reporting inside this module.
+
+### A. Final customer bill
+
+Customer charges must reflect the actual products delivered and accepted.
+
+For each delivery line, keep separate records for ordered quantity, loaded quantity, accepted quantity, missing quantity, and BO/returned quantity.
+
+Use this billing rule:
+
+Billable product amount = actual saleable quantity accepted by the store × the applicable unit selling price.
+
+Net amount due = billable product amount + other approved charges − approved discounts or credits + any explicitly included prior balance.
+
+A product that was never delivered is not charged to the customer.
+
+A BO product that is refused and returned must not be charged as an accepted sale. If the original bill already charged for that item, post a separate credit adjustment rather than deducting the same item twice.
+
+Keep the original booking and all approved changes traceable. A correction must never silently overwrite the original transaction.
+
+Make the final amount due visible before the receipt is finalized.
+
+### B. Receipts and payments
+
+Every delivery must generate a uniquely numbered customer receipt or delivery invoice.
+
+Include:
+
+- Receipt number and date.
+- Customer and store details.
+- Route and related booking.
+- Product names, unit prices, quantities, and line amounts.
+- Missing and returned quantities where applicable.
+- Approved credits or deductions.
+- Final net amount due.
+- Payments received and methods.
+- Outstanding balance.
+- Staff/collector name.
+- Customer acknowledgment or signature area.
+
+Support Cash, GCash, Bank Transfer, and Check.
+
+Capture appropriate reference information, such as a GCash transaction reference or a check number and bank.
+
+Checks must support statuses such as Pending, Cleared, and Bounced. Do not treat pending checks as cleared funds.
+
+Support partial payments and unpaid balances.
+
+Prevent the same payment reference from being accidentally recorded twice. Allow authorized corrections with an audit trail.
+
+Provide a receipt that can be printed or saved as a PDF using a working print layout.
+
+### C. Daily collection reconciliation
+
+At the end of a delivery run or workday, show:
+
+- Total finalized customer bills.
+- Cash expected.
+- Cash actually counted.
+- GCash collections.
+- Bank transfer collections.
+- Checks received, separated by status.
+- Total collections by method.
+- Customer balances still outstanding.
+- Overages or shortages.
+
+Calculate:
+
+Cash variance = actual cash counted − expected cash to be collected in cash.
+
+For example, if cash expected is ₱20,000 but the actual cash counted is ₱19,000, show a ₱1,000 cash shortage.
+
+Do not change the receipt total merely to make the money match.
+
+Require the user to record a reason for any difference. Restrict approval and final closure of significant discrepancies to the owner or an authorized user.
+
+Produce a collection summary by delivery route, collection date, collector, and payment method.
+
+### D. Monthly Selecta POS quota
+
+Create a simple monthly quota page.
+
+The default example target is ₱1,000,000, but the owner must be able to change the target for each month.
+
+Store the following separately:
+
+- Monthly sales target.
+- Actual sales figures from the official Selecta POS.
+- Date the official POS figure was recorded.
+- Reference or supporting note.
+- Staff member who entered or verified the figure.
+- Remaining amount to reach the target.
+- Percentage achieved.
+
+Allow manual daily or monthly updates based on the official Selecta POS, with a history of previous entries or corrections.
+
+Use clearly labeled fields and totals. Do not assume that internal delivery totals automatically equal official Selecta quota figures.
+
+Make the quota dashboard understandable at a glance.
+
+### E. Reports
+
+Include these reports under simple tabs or a Reports dropdown:
+
+1. Daily and monthly sales.
+2. Booking and delivery fulfillment.
+3. Inventory balance and stock movement.
+4. Missing, damaged, and BO products.
+5. Customer payments and outstanding balances.
+6. Cash collection and discrepancies.
+7. Monthly Selecta POS quota.
+8. Freezer monthly verification compliance.
+9. Staff and delivery-run summaries.
+
+Support date, route, store, and staff filters where relevant.
+
+Allow printing and Excel export. Ensure report totals match the underlying saved transactions and do not double-count revised or credited invoices.
+
+## 8. SETTINGS & STAFF MANAGEMENT
+
+Keep administrative setup small and understandable.
+
+Include settings for:
+
+- Company information and receipt header.
+- Products, selling prices, and stock thresholds.
+- Customers and delivery areas.
+- Booking and delivery schedules.
+- Monthly quota targets.
+- Freezer-program fee configuration.
+- Staff accounts and permissions.
+- Receipt numbering and transaction settings.
+
+Use only two broad default user groups:
+
+**Owner/Admin:** Full access, including settings, approvals, reports, and controlled corrections.
+
+**Staff:** Access according to assigned responsibilities and permissions.
+
+Allow one person to perform multiple roles. The booker, checker, collector, driver, or loaders may change from day to day.
+
+Every booking, stock receipt, delivery, payment, and adjustment must record the actual user responsible. Do not permanently attach transactions to a fixed employee just because that employee has a default role.
+
+Apply server-side permission checks, not merely UI hiding.
+
+## 9. DATABASE AND RECORD RELATIONSHIPS
+
+Design a normalized database that connects related records reliably.
+
+Include entities for:
+
+- Users and roles/permissions.
+- Customers/stores and delivery areas.
+- Products and applicable selling prices.
+- Supplier/bodega orders and order lines.
+- Customer bookings and booking lines.
+- Supplier receiving records and receiving lines.
+- Stock movement ledger.
+- Delivery runs, assigned staff, stops, and delivery lines.
+- Customer invoices/receipts and lines.
+- Payment transactions and payment allocations.
+- Delivery and cash reconciliation.
+- Freezer assets and store assignments.
+- Monthly freezer verification records and photo metadata.
+- Monthly Selecta POS quota records.
+- Audit logs and approved adjustments.
+
+Use unique IDs, appropriate foreign keys, validation, database transactions, and indexes where useful.
+
+Do not allow finalized business records to disappear through ordinary deletion. Use controlled corrections, cancellation records, or reversal entries where appropriate.
+
+Save all important actions with the user, date, and reason when applicable.
+
+Maintain the relationship between a booking, the official bodega order reference, the goods received, allocated products, the delivery receipt, payments, returns, and the final reconciliation.
+
+## 10. REQUIRED END-TO-END WORKFLOW
+
+Implement and verify this complete example:
+
+1. The booker creates a Monday or Tuesday booking with several stores and different product quantities.
+2. The booking produces a consolidated product summary and printable booking sheets.
+3. The owner marks that the supplier request was submitted through the official Selecta POS and records its reference.
+4. The truck arrives. The checker records actual good and damaged quantities, the truck plate, receiving date, and receiver.
+5. The system updates inventory and identifies insufficient stock.
+6. The team prepares and labels store-specific boxes and assigns the actual driver and two loaders, or substitute staff.
+7. The delivery team records actual accepted quantities and any missing or BO products at each stop.
+8. The application calculates the correct final bill without double-deducting a BO credit or charging for undelivered items.
+9. The collector records cash, GCash, bank transfer, or checks, with any remaining customer balance.
+10. At the end of the run, the owner compares expected cash with actual cash and investigates discrepancies.
+11. Reconciliation updates inventory and records BO returns, intact returned stock, shortages, and any approved adjustments.
+12. The owner reviews the sales reports, official POS quota, staff activity, and monthly freezer verification compliance.
+
+The sample delivery calendar should permit the business to use its usual pattern: after an example Wednesday stock arrival, Cabanglasan deliveries on Thursday and Valencia–San Fernando deliveries on Friday. These schedules must remain editable, not permanently hardcoded.
+
+## 11. IMPORTANT ACCOUNTING AND INVENTORY SAFEGUARDS
+
+Never silently change transaction totals to conceal a shortage.
+
+Never deduct a BO product twice.
+
+Never sell returned damaged products without an explicit authorized disposition.
+
+Never count an uncollected or uncleared payment as settled cash.
+
+Never assume ordered quantities equal received quantities or delivered quantities.
+
+Never increase available stock for products that are still missing or in transit.
+
+Never count internal records and official Selecta POS figures together as though they were two independent sources of sales.
+
+Ensure all final amounts, balances, and stock counts are calculated from transaction details on the server and stored consistently.
+
+Use Philippine peso formatting throughout.
+
+## 12. TESTING AND ACCEPTANCE CRITERIA
+
+Write and execute automated tests for critical business logic, including:
+
+- Booking total calculations.
+- Supplier receiving and inventory updates.
+- Stock availability and insufficient stock.
+- Delivery quantity differences.
+- Missing-product deductions.
+- BO returns and credit adjustments.
+- Prevention of duplicate deductions.
+- Cash shortages and overages.
+- Cash, GCash, bank transfers, checks, and outstanding balances.
+- Prevention of negative stock without authorization.
+- Freezer verification due dates and duplicate-period controls.
+- Monthly quota progress.
+- User permissions and audit records.
+
+Test the actual application, not only isolated calculations. Verify navigation, form validation, saved data, search, filters, print layouts, exports, and error states.
+
+Do not declare the project complete if the application fails to build, important routes do not work, the database is not connected, or core calculations are incorrect.
+
+## 13. DESIGN QUALITY
+
+The finished design should feel like a simple business application, not an oversized enterprise system.
+
+Prefer five clear main menus, practical sub-tabs, a few primary action buttons, clean tables, readable forms, and meaningful status indicators.
+
+Use familiar language and avoid unnecessary technical terms in the interface.
+
+Do not add payroll, employee attendance, accounting ledgers, CRM campaigns, supplier marketplace features, or other unrelated modules unless specifically requested later.
+
+Optimize for correctness and ease of use rather than the number of features.
+
+## 14. FINAL DELIVERABLES
+
+Complete the application inside the current VS Code workspace.
+
+Provide:
+
+1. Working application source code.
+2. Complete database schema and migrations.
+3. Seed/demo data clearly identified as sample data.
+4. All five primary modules and their working sub-functions.
+5. Working API and database operations.
+6. Automated tests and test results.
+7. Excel import/export and printable forms.
+8. README.md with exact installation, database setup, environment configuration, startup, testing, and backup instructions.
+9. A concise explanation of the database structure and end-to-end business workflow.
+10. A list of any remaining limitations, missing external integrations, and decisions that the owner must confirm.
+
+Run the project, fix build and runtime errors, execute the tests, and verify the core workflows before reporting completion.
+
+Start by inspecting the existing workspace and producing your implementation plan. Then implement the complete functional system rather than stopping at a plan or visual prototype.

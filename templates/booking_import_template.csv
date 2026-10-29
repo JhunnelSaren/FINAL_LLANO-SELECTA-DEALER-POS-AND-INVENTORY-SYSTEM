@@ -1,0 +1,8 @@
+Store_Code,Store_Name,Area_Route,Delivery_Date,Booker_Name,Product_SKU,Product_Name,Quantity,Unit_Price,Notes
+CUST-001,Aling Nena Sari-Sari Store,Valencia City Route (Batangan),2026-10-30,Pedro Booker,COR-001,CHOCOLATE (CORNETTO),30,28.00,Deliver before 10 AM
+CUST-001,Aling Nena Sari-Sari Store,Valencia City Route (Batangan),2026-10-30,Pedro Booker,MAG-001,CLASSIC (MAGNUM),15,65.00,Store freezer top shelf
+CUST-002,San Isidro Mini-Mart,Valencia City Route (San Isidro),2026-10-30,Pedro Booker,COR-002,VANILLA (CORNETTO),25,28.00,Regular weekly replenishment
+CUST-002,San Isidro Mini-Mart,Valencia City Route (San Isidro),2026-10-30,Pedro Booker,SUP-001,DOUBLE DUTCH 1.3L,10,260.00,Keep tubs frozen flat
+CUST-003,Cabanglasan Highland Corner,Cabanglasan Delivery Route,2026-10-31,Juan Booker,COR-003,COOKIES & DREAM (CORNETTO),40,28.00,Cabanglasan Thursday route
+CUST-003,Cabanglasan Highland Corner,Cabanglasan Delivery Route,2026-10-31,Juan Booker,MAG-002,ALMOND (MAGNUM),20,65.00,Store requested promotional poster
+CUST-005,Halapitan Trading Post,Valencia -> San Fernando Route,2026-10-31,Maria Booker,SUP-002,ROCKY ROAD 1.3L,8,260.00,San Fernando Friday route

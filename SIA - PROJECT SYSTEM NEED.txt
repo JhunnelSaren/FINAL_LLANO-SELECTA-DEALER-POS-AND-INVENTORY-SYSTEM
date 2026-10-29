@@ -1,0 +1,86 @@
+SIA - PROJECT SYSTEM NEED:
+
+
+When We do a booking we use the attached file to fill the orders of every costumer, and then it total everything. now, can we apply all the products listed and also the pictures of it, and then, total sales of the day, with filtering of day and months or year. And then, we have a Quota (For example: 1M) that we need to get within the month, and then connect it to the sales. Make sure there is an admin, and staff. add a quick log in features, and then Users manangement for the admin where he can edit their information or add aa users, or remove. 
+
+
+
+Where is the Registration? it must have a Admin Application, and a Staff Application.  and a demo account for both with an quick login.
+
+
+Now, add a Staff module where the Admin can manage there information just like the, Full name, age, birth, contact #, Date he/she started working on the business, Emergency contact, Email. and they should have an ID number of the business. And then, add a Selecta logo with name on the Log in page with the Llano Dealer name, and also to the Home page Selecta logo with then Llano Dealer Name.
+
+It must a have a Bookings Module or orders, And the Staff when booking they can select the productss of the costumers prefer to buy, and then there should be a name of the costumers store and there orders.
+
+
+
+Now, can we first focus on the UI design of the System please. I want the system below to have a perfect filter by of the products, and can see the Total sale of the day or months, how many Staffs or users, Available products, How many deliveries of the months, and a qouta for example 1m for this month must be get. and then the admin must be able to manage all the USers information  ( Like Profile picture, Age, Started working, Positions , Email, Contact Number) and able to add users. and i want to have a Stores management from different Areas like the stores from Valencia, Cabanglasan, sanfernando. and the admin can managed what freezer they has from selecta by indicating barcode. we can Separate the file of every modules to make it very organized. update the code below instead and send me the full updated codes 1 by 1:
+
+
+Now, the Admin must be able to manage the User passwords and email, can edit and delete or update them. and add a Staff modules where the admin can see all their informations such as their uploaded pictures, age, email, started working, contact number. And fix the Freexer managament modules cause i cant see it, and also the orders and the stores from different areas.
+
+
+Wait, heres how the business runs. The Business has already a system or POS system but that is directly to selecta which they used when ordering a product to the bodega of the selecta, and then Llano SELECTA Dealer was assigned to provide products around Batangan-san Isidro-Lumabayo (Valencia City, Bukidnon), Whole Cabanglasan Area and Whole Sanfernando. They provide freezers (Owned By Selecta and need to be Scanned the barcode Everymonth Using Timemark app via CP with picture of the code on it, just like the example photo attached) to the costumers or the stores. but they need to pay 10,000 for it, and purpose of it was 9k for the products that will be put on the freezers and 1k for the processing fee. And then 1 rider (Or w/ backride) will do a booking every monday-tuesday, for example monday is from Valencia-Sanfernando, and then tuesday is Cabanglasan. The Excel attached file was used to fill up depends how many quantity the costumer asked on every store, but we also used hardcopy of that to be filled up and put the names of every store on their order (Excel file was the example). After the booking the booker will hand the hardcopy or softcopy of their booking to the owner of the business and then the owner will automatically request an order to the bodega of selecta using the POS of Selecta (Not their own POS). and then when the Roadwise of truck panel arrives at the Dealer store, the staff will received all the orders or stocks and check every stocks if theres no damage specially the plastic icecream, and when its done the Selecta Truck panel Stuff will hand the paper or receipt to the owner or checker and it will be signed by the receiver of the business with date and plate number of the truck icecream panel, and if it was arrived, for example it arrives on Wedns, the delivery will be on the next day Thursday and Friday (For exaple; Thursday Delivery of products to the every stores or costumer of Cabanglasan, and then Friday to the Valencia Area-sanfernando). And the products will be delivered using Bongo, and the icecream will be put on Ice box with a tape and name labeled each of the box for every stores, and it will be deliver by 3 the driver and the 2 staff to load and unload the boxes/products. and when the delivery is done (But sometimes during a dropping of products of every store, the problem soetime was the Hardcopy receipt total and product was right, but the some of the product carried was missing or it was not or forgot to put onto the box and the business staff must deduct that missing product to the total price of the store order receipt, and sometimes on every store there was product that was melted or called BO, that must carry by the delivery back to the Llano selecta store and the total price of that BO must deducted to receipt of the costumers order during the dropping or delivery), the receipt carrier must total all the sales or P.O and make sure the cash money should be the same total on the receipt (But sometimes the problem was the cash was lesser or there was sometimes 1k lesser than the Receipt total price). After that it will be put to the POS and make sure to hit the Quta on each month to the POS of selecta for example this month the qouta was to reach 1m. But sometimes the Costumers pays using Gcash and bank checky. and the llano Dealer staffs was working depends on who is available, and sometimes the Driver was replaced also the booker.
+
+
+Shortcuts
+  press r + enter to restart the server
+  press u + enter to show server url
+  press o + enter to open in browser
+  press c + enter to clear console
+  press q + enter to quit
+
+npm run dev
+
+
+* Build the Express/Node.js API & PostgreSQL database schema
+
+* Build the Reports Center & Sales/Tax Export module
+
+
+RUN:
+
+cd llano-selecta-frontend
+cd server
+npm init -y
+npm install express pg cors dotenv
+node index.js
+npm run dev
+
+ 
+BACKEND SERVER:
+cd "llano-selecta-frontend\server"
+node server.js
+
+FRONTEND UI:
+cd llano-selecta-frontend
+npm run dev
+
+
+Now, fix what is needed please to run smoothly and to make everything and every modules and buttons working perfectly, but dont change or remove anything just do what is asked only.
+
+
+Now, first, All the UI on the dashboard should be functional perfectly specially the buttons and graphs. Second, all the the photos must be able to came from the devices and can upload to the system (Deployment paper and etc photos in every modules). Third, the Customers/Stores information must be editable (Specially when papers and freezera is not yet given), and when Registering a New store, the the Assigned Freezer Model must be Barcode No. Instead beside Freezer Serial #. Fourth, And when Adding the Products the Categories choices must be perfect and matches to what products it is belong, and should be able to add an category like HRI 3.8L, and its flavors. 5th, the when adding the employees, renamed the bodega central into a warehouse. 6th, when creating a delivery routes, all the the employees must be on the choices, and we should be able to know if its delivered or not or if theres a boxes for a stores or costumers that is backload. 7th, in the Freezers Catalog, rename the Selecta Freezer number # into A Freezer Serial #, and the assigned freezer must be editable incase of transfer of owner (It should indicate the pass owner and new owner), and we should be able to know if it is deployed or pull out (Means it was taken back to the warehouse of Llano). and in the Record Timemark Scan, remove the Timemark App Reference # and the photo must be replacable and it must have a specific date and time of scanning of when it scanned. 8th, in the Bookings, the statues must only be either: Booked, Draft, Delivered, Backload (Unsuccesful Delivery or the Costumer must be closed, and the delivery person must be able to note what is the reason of the failed), the delivery person must be able to put the delivery either of that choices or must have a button just make it perfect. And when creating a Booking Route/Area must be a dropdown and select the Areas, and then on that specific area that was chosen in the Select Store must be has all the costumer of that area in short filterized. to make it easy it must show on dashboard the delivery status. 9th, in the Select Po's, the Order status must be only Submitted or completed, we should be able to put the status on submitted or completed or received (When it arrives to the Llano Selecta Dealer, and we must be able to the Photo of the Receipt and note or put the Damage that did not receive from the freezer van and put the exact price and its deducted to the damages on stock receiving module). and when Log Selecta Dealer, we must be able the select all the categories what we see in the products, and select types of each in the categories and the quantities. and we should be able to update the price of those product and match them to the Selecta Main Bodega (Prices). And All the Products received from the freezer van, and put it as delivered. the Quanties of the products modules and its all products must added (On stock receiving Module). 10th, the Inventory Ledger UI must be perfect and its functions based on the flow of the system and modules. 
+/11th, in the dispatch & packing, all the bookings must be on it, and in the Schedules Bongo Dispatch must be able to select all the employees on it depends on their positions. 
+12th, on the Missing & BO Log, the when Logging, the user must be able to choose all of the categories of the products with its flavors. 
+13th, POS/Sales and Payment Collections modules must not be the same. 
+14th, remove the Freezer Timemark module. and remove the Valencia City & Cabanglasan Hub on the top of the header of the UI, and the Notification modules on the top header must work Properly. Do everything perfectly please, Do not change or reove anything, just do what is asked only. 
+
+
+Lets have 2 user only and gave them their access key (Admin/staff)> And then Change anything that must to be change, aand anything that need to be perfect, and make the system 100% working perfectly and ready for deployment please.
+
+
+Can you please build or provide a full perfect code query for my system to make it working properly? I used pgAdmin 4 Postgresql. 
+
+
+On Employees & Dynamic Roles, remove the Assigned Route and Allowed capabilites (and then matched it when Adding an employee). And we must be able to see the Date employee's applied, birthdate, email (Optional), and Their picture ID. Lets do a design on it please like their photo and the the left side is their informations. Next on Freezer Asset Management & Custody Tracking, remove the Barcode Scans & Proof Verification (1 Action Needed). Remove the Dispatch & Ice Box Packing Module. and then remove the Stock Receiving & Freezer Van Arrival module and combined it perfectly to the Inventory Ledger & Stock Movements. now, remove the POS & Customer Payments and combined it to the Field Bookings module. On Store Bookings & Delivery Orders modules, make it perfect please like i want it is already booked to a specific store, we must be able to click ready for deliver, and when clicking delivered, we must be able to check the way of payments, total receipt, B.O Deductions and a status delivered, and we must see the all total amount of the delivered of all the stores, and it must be specific and has a filtered like Cabanglasan bookings or delivery, with booked date and time of each store and it must have a history of bookings and separated books of each day or months. and then remove the easy change role on the Header. and add a user management modules and inside the give username and password date created and can add users of it edit, update and delete of can stop the access of the users (2 user only which is the admin and Staff), and when there is someone trying to register as employee it must be first verify by admin and allow or accept the registration. make it perfect the role accessible of the modules and the two user must have already given a username and passwords. the admin alsom must be able to see the active status of the users like login 1hr ago and etc. and please add a Settings module where the Admin can change the login hompage photo (Get from the files) captions and descriptions and the logo. and then make everything simple please like easy to use and begineer friendly UI. And then lets make this running perfectly and ready to use and remove the sample data and replace with the database exists, and please build or provide a full perfect code query for my system to make it working properly.I used pgAdmin 4 Postgresql (I already donwloaded to my laptop only query is needed named "llano_selecta_db"). 
+
+
+
+
+npm run dev
+npm run server
+
+Run Business Rule Verification: npm test
+
+Production Build Check: npm --prefix llano-selecta-frontend run build
