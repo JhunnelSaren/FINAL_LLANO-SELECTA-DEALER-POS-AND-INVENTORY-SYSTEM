@@ -5,13 +5,12 @@ import Navbar from './components/layout/Navbar'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import OrdersDelivery from './pages/OrdersDelivery'
-import Reconciliation from './pages/Reconciliation'
 import Inventory from './pages/Inventory'
 import StoresFreezers from './pages/StoresFreezers'
 import SalesReports from './pages/SalesReports'
 import Settings from './pages/Settings'
 
-export type ActiveTab = 'dashboard' | 'orders-delivery' | 'reconciliation' | 'inventory' | 'stores-freezers' | 'sales-reports' | 'settings'
+export type ActiveTab = 'dashboard' | 'orders-delivery' | 'inventory' | 'stores-freezers' | 'sales-reports' | 'settings'
 
 function AppContent() {
   const { user, isLoading: loading } = useAuth()
@@ -36,7 +35,6 @@ function AppContent() {
       <main className="max-w-screen-2xl mx-auto px-4 py-6">
         {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
         {activeTab === 'orders-delivery' && <OrdersDelivery />}
-        {activeTab === 'reconciliation' && <Reconciliation />}
         {activeTab === 'inventory' && <Inventory />}
         {activeTab === 'stores-freezers' && <StoresFreezers />}
         {activeTab === 'sales-reports' && <SalesReports />}

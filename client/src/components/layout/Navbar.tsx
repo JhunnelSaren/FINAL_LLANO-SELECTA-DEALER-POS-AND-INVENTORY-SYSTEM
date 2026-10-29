@@ -5,7 +5,6 @@ import {
   Package,
   Store,
   FileText,
-  FileCheck,
   Settings as SettingsIcon,
   LogOut,
   User as UserIcon,
@@ -81,7 +80,6 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders-delivery', label: 'Orders & Delivery', icon: Truck },
-    { id: 'reconciliation', label: 'Reconciliation', icon: FileCheck },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'stores-freezers', label: 'Stores & Freezers', icon: Store },
     { id: 'sales-reports', label: 'Sales & Reports', icon: FileText },
@@ -157,7 +155,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           </button>
 
           {/* Primary Navigation Tabs */}
-          <nav aria-label="Main modules" className="hidden xl:flex shrink-0 items-center gap-0.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shadow-inner">
+          <nav aria-label="Main modules" className="hidden xl:flex flex-1 max-w-4xl mx-6 items-center justify-evenly bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shadow-inner">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -188,7 +186,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 {notificationCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold text-white">{notificationCount > 9 ? '9+' : notificationCount}</span>}
               </button>
               {notificationsOpen && <div className="absolute right-0 mt-2 w-[min(90vw,24rem)] max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl z-50">
-                <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="text-sm font-bold text-slate-800">Staff Notifications</h3><p className="text-xs text-slate-500">Incoming bookings, stock, deliveries, and reconciliations</p></div><button onClick={() => setNotificationsOpen(false)} className="text-sm text-slate-500">Close</button></div>
+                <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="text-sm font-bold text-slate-800">Staff Notifications</h3><p className="text-xs text-slate-500">Incoming bookings, stock, deliveries, and collections</p></div><button onClick={() => setNotificationsOpen(false)} className="text-sm text-slate-500">Close</button></div>
                 {notifications.length ? notifications.map(item => <button key={item.id} onClick={() => { setActiveTab(item.module || 'dashboard'); setNotificationsOpen(false); }} className="block w-full border-b px-4 py-3 text-left hover:bg-slate-50">
                   <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.level === 'urgent' ? 'bg-rose-600' : item.level === 'warning' ? 'bg-amber-500' : 'bg-blue-400'}`} /><span className="text-sm font-semibold text-slate-800">{item.title}</span></div>
                   <p className="mt-1 pl-4 text-xs text-slate-600">{item.message}</p>

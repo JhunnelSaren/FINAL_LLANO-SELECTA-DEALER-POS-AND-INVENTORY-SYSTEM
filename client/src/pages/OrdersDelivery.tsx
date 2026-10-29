@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ClipboardList, Package, Truck, Plus, Download, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
@@ -28,12 +28,14 @@ function BookingsTab() {
   const [fArea, setFArea] = useState('all');
   const [fStatus, setFStatus] = useState('all');
   const [fSearch, setFSearch] = useState('');
+  const [formBookingDate, setFormBookingDate] = useState(() => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
   const [formCustomerId, setFormCustomerId] = useState('');
   const [formArea, setFormArea] = useState('');
   const [formBooker, setFormBooker] = useState(user?.name || '');
   const [formNotes, setFormNotes] = useState('');
   const [formItems, setFormItems] = useState<{ productId: string; quantity: number; category: string }[]>([{ productId: '', quantity: 1, category: '' }]);
   const [submitting, setSubmitting] = useState(false);
+  const submissionLock = useRef(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -44,8 +46,11 @@ function BookingsTab() {
       if (fSearch) params.set('search', fSearch);
       const data = await apiRequest<any>(`/bookings?${params}`);
       setBookings(Array.isArray(data) ? data : []);
-    } catch (e: any) { showToast(e.message, 'error'); }
-    setLoading(false);
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
   }, [fArea, fStatus, fSearch]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -53,24 +58,57 @@ function BookingsTab() {
     Promise.all([
       apiRequest<any>('/products').then(r => setProducts(Array.isArray(r) ? r : r.products || [])),
       apiRequest<any>('/customers').then(r => setCustomers(Array.isArray(r) ? r : r.customers || [])),
-    ]).catch(() => {});
-  }, []);
+    ]).catch((e: any) => showToast(e.message, 'error'));
+  }, [showToast]);
 
   const handleSubmitBooking = async () => {
-    if (!formCustomerId) { showToast('Select a customer', 'warning'); return; }
-    const validItems = formItems.filter(i => i.productId && i.quantity > 0);
-    if (validItems.length === 0) { showToast('Add at least one product line', 'warning'); return; }
+    if (submissionLock.current) return;
+    if (!formBookingDate) { showToast('Select a booking date', 'warning'); return; }
+    if (!formArea) { showToast('Select an area', 'warning'); return; }
+    if (!formCustomerId) { showToast('Select a store or dealer', 'warning'); return; }
+    if (!formBooker.trim()) { showToast('Enter the booker name', 'warning'); return; }
+    if (formItems.length === 0 || formItems.some(item => !item.productId || !Number.isSafeInteger(item.quantity) || item.quantity <= 0)) {
+      showToast('Select a product and enter a whole quantity greater than zero for every order line.', 'warning');
+      return;
+    }
+    if (new Set(formItems.map(item => item.productId)).size !== formItems.length) {
+      showToast('Each product can only appear once. Update its quantity on the existing line.', 'warning');
+      return;
+    }
+    const bookingDate = new Date(`${formBookingDate}T12:00:00`);
+    if (!Number.isFinite(bookingDate.getTime())) { showToast('Enter a valid booking date.', 'warning'); return; }
+
+    submissionLock.current = true;
     setSubmitting(true);
     try {
-      await apiRequest('/bookings', {
+      const createdBooking = await apiRequest<Booking>('/bookings', {
         method: 'POST',
-      body: JSON.stringify({ customerId: formCustomerId, area: formArea, bookingDate: new Date().toISOString(), bookerName: formBooker, notes: formNotes, items: validItems }),
+        body: JSON.stringify({
+          customerId: formCustomerId,
+          area: formArea,
+          bookingDate: bookingDate.toISOString(),
+          bookerName: formBooker.trim(),
+          notes: formNotes.trim(),
+          items: formItems,
+        }),
       });
       showToast('Booking created successfully!');
-      setShowForm(false); setFormItems([{ productId: '', quantity: 1, category: '' }]); setFormCustomerId(''); setFormArea(''); setFormNotes('');
-      loadData();
+      setShowForm(false);
+      setFormItems([{ productId: '', quantity: 1, category: '' }]);
+      setFormCustomerId('');
+      setFormArea('');
+      setFormBooker(user?.name || '');
+      setFormNotes('');
+      setFArea('all');
+      setFStatus('all');
+      setFSearch('');
+      setBookings(current => [...current.filter(booking => booking.id !== createdBooking.id), createdBooking]
+        .sort((a, b) => new Date(b.bookingDate).getTime() - new Date(a.bookingDate).getTime()));
     } catch (e: any) { showToast(e.message, 'error'); }
-    setSubmitting(false);
+    finally {
+      submissionLock.current = false;
+      setSubmitting(false);
+    }
   };
 
   const handleExport = async () => {
@@ -109,7 +147,14 @@ function BookingsTab() {
         <button onClick={loadData} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-700"><Search className="inline h-4 w-4 mr-1" />Filter</button>
       </div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setShowForm(true)} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-700 flex items-center gap-2"><Plus className="h-4 w-4" />New Booking</button>
+        <button onClick={() => {
+          setFormBookingDate(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+          setFormArea('');
+          setFormCustomerId('');
+          setFormBooker(user?.name || '');
+          setFormItems([{ productId: '', quantity: 1, category: '' }]);
+          setShowForm(true);
+        }} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-700 flex items-center gap-2"><Plus className="h-4 w-4" />New Booking</button>
         <button onClick={handleExport} className="bg-white border text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 flex items-center gap-2"><Download className="h-4 w-4" />Export Excel</button>
         <button onClick={handleConsolidated} className="bg-white border text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50">Summary</button>
       </div>
@@ -140,10 +185,12 @@ function BookingsTab() {
             <div className="px-6 py-4 border-b flex items-center justify-between"><h3 className="text-lg font-bold text-slate-800">New Booking</h3><button onClick={() => setShowForm(false)}><X className="h-5 w-5 text-slate-400" /></button></div>
             <div className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Customer / Store *</label><select value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} disabled={!formArea} className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-slate-100"><option value="">Select store</option>{customers.filter(c => c.area === formArea && c.status === "Active").map(c => <option key={c.id} value={c.id}>{c.storeName} · {c.subArea || c.purok || c.area}</option>)}</select></div>
+                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Booking Date *</label><input type="date" value={formBookingDate} onChange={e => setFormBookingDate(e.target.value)} required className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
                 <div><label className="block text-sm font-semibold text-slate-700 mb-1">Area *</label><select value={formArea} onChange={e => { setFormArea(e.target.value); setFormCustomerId(''); }} className="w-full border rounded-lg px-3 py-2 text-sm"><option value="">Select area</option><option>Valencia</option><option>Cabanglasan</option><option>San Fernando</option></select></div>
-                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Booker</label><input type="text" value={formBooker} onChange={e => setFormBooker(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Customer / Store *</label><select value={formCustomerId} onChange={e => setFormCustomerId(e.target.value)} disabled={!formArea} required className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-slate-100"><option value="">Select store</option>{customers.filter(c => c.area === formArea && c.status === 'Active').map(c => <option key={c.id} value={c.id}>{c.storeName} · {c.subArea || c.purok || c.area}</option>)}</select></div>
+                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Booker / Customer Name *</label><input type="text" value={formBooker} onChange={e => setFormBooker(e.target.value)} required maxLength={128} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
                 <div><label className="block text-sm font-semibold text-slate-700 mb-1">Notes</label><input type="text" value={formNotes} onChange={e => setFormNotes(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div>
+                <div><label className="block text-sm font-semibold text-slate-700 mb-1">Booking Status</label><input type="text" value="Booked" readOnly className="w-full border rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-600" /><p className="mt-1 text-xs text-slate-500">Status updates as the booking moves through preparation and delivery.</p></div>
               </div>
               <div><label className="block text-sm font-semibold text-slate-700 mb-2">Order Items</label>
                 <table className="w-full text-sm"><thead className="bg-slate-50"><tr><th className="text-left px-3 py-2">Category</th><th className="text-left px-3 py-2">Flavor / Product</th><th className="text-left px-3 py-2 w-24">Qty</th><th className="text-right px-3 py-2 w-28">Price</th><th className="text-right px-3 py-2 w-28">Subtotal</th><th className="w-10" /></tr></thead>
@@ -152,7 +199,7 @@ function BookingsTab() {
                     const price = prod?.sellingPrice || 0;
                     return (<tr key={idx} className="border-b">
                       <td className="px-3 py-2"><select value={item.category} onChange={e => { const ni = [...formItems]; ni[idx] = { ...ni[idx], category: e.target.value, productId: "" }; setFormItems(ni); }} className="w-full border rounded px-2 py-1 text-sm"><option value="">Select category</option>{[...new Set(products.map(p => p.category))].sort().map(category => <option key={category}>{category}</option>)}</select></td><td className="px-3 py-2"><select value={item.productId} onChange={e => { const ni = [...formItems]; ni[idx].productId = e.target.value; setFormItems(ni); }} className="w-full border rounded px-2 py-1 text-sm" disabled={!item.category}><option value="">Select flavor</option>{products.filter(p => p.category === item.category && p.isActive !== false).map(p => <option key={p.id} value={p.id}>{p.flavor || p.name} ({p.sku})</option>)}</select></td>
-                      <td className="px-3 py-2"><input type="number" min={1} value={item.quantity} onChange={e => { const ni = [...formItems]; ni[idx].quantity = parseInt(e.target.value) || 0; setFormItems(ni); }} className="w-full border rounded px-2 py-1 text-sm text-right" /></td>
+                      <td className="px-3 py-2"><input type="number" min={1} step={1} value={item.quantity} onChange={e => { const ni = [...formItems]; ni[idx].quantity = e.target.value === '' ? 0 : Number(e.target.value); setFormItems(ni); }} className="w-full border rounded px-2 py-1 text-sm text-right" /></td>
                       <td className="px-3 py-2 text-right text-slate-600">{formatPeso(price)}</td>
                       <td className="px-3 py-2 text-right font-semibold">{formatPeso(price * item.quantity)}</td>
                       <td className="px-3 py-2">{formItems.length > 1 && <button onClick={() => setFormItems(formItems.filter((_, i) => i !== idx))} className="text-rose-500"><X className="h-4 w-4" /></button>}</td>

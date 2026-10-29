@@ -1,8 +1,10 @@
 import { Router, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import prisma from '../db.js';
 import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
 import { upload } from '../upload.js';
 import * as xlsx from 'xlsx';
+import { nextBookingNumber } from '../booking-number.js';
 
 const router = Router();
 
@@ -118,22 +120,33 @@ router.get('/consolidated', authenticateToken, async (req, res: Response) => {
 
 // POST /api/bookings
 router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
-  const { customerId, bookingDate, bookerName, notes, items } = req.body;
+  const { customerId, area, bookingDate, bookerName, notes, items } = req.body;
   try {
-    if (!customerId || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Customer and at least one order line are required.' });
+    if (typeof customerId !== 'string' || !customerId.trim()
+      || typeof area !== 'string' || !area.trim()
+      || typeof bookerName !== 'string' || !bookerName.trim()
+      || typeof bookingDate !== 'string' || !bookingDate.trim()
+      || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Booking date, area, store, booker name, and at least one order line are required.' });
     }
 
-    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+    const bookedAt = new Date(bookingDate);
+    if (!Number.isFinite(bookedAt.getTime())) return res.status(400).json({ error: 'Enter a valid booking date.' });
+
+    const customer = await prisma.customer.findUnique({ where: { id: customerId.trim() } });
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found.' });
     }
     if (customer.status !== 'Active') {
       return res.status(409).json({ error: 'This store is inactive. Reactivate it in Stores & Customers before creating a booking.' });
     }
+    if (customer.area !== area.trim()) {
+      return res.status(400).json({ error: 'The selected store does not belong to the selected area.' });
+    }
 
     // Calculate line items and subtotal server-side
     let calculatedSubtotal = 0;
+    const seenProductIds = new Set<string>();
     const validatedItems: {
       productId: string;
       productName: string;
@@ -144,17 +157,38 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     }[] = [];
 
     for (const line of items) {
-      const product = await prisma.product.findUnique({ where: { id: line.productId } });
+      if (!line || typeof line.productId !== 'string' || !line.productId.trim()) {
+        return res.status(400).json({ error: 'Every order line must include a product.' });
+      }
+      const productId = line.productId.trim();
+      if (seenProductIds.has(productId)) {
+        return res.status(400).json({ error: 'Each product can only appear once in a booking.' });
+      }
+      seenProductIds.add(productId);
+
+      const product = await prisma.product.findUnique({ where: { id: productId } });
       if (!product) {
         return res.status(400).json({ error: `Product ID "${line.productId}" not found in catalog.` });
       }
-      const qty = parseInt(line.quantity, 10);
-      if (isNaN(qty) || qty <= 0) {
+      if (!product.isActive) {
+        return res.status(400).json({ error: `${product.name} is inactive and cannot be booked.` });
+      }
+      const qty = Number(line.quantity);
+      if (!Number.isSafeInteger(qty) || qty <= 0) {
         return res.status(400).json({ error: `Invalid quantity for product ${product.name}.` });
       }
       const unitPrice = Number(product.sellingPrice);
+      if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+        return res.status(400).json({ error: `The catalog price for ${product.name} is invalid.` });
+      }
       const lineTotal = Number((qty * unitPrice).toFixed(2));
-      calculatedSubtotal += lineTotal;
+      if (!Number.isFinite(lineTotal)) {
+        return res.status(400).json({ error: `The quantity for ${product.name} is too large.` });
+      }
+      calculatedSubtotal = Number((calculatedSubtotal + lineTotal).toFixed(2));
+      if (!Number.isFinite(calculatedSubtotal)) {
+        return res.status(400).json({ error: 'The booking total is too large.' });
+      }
 
       validatedItems.push({
         productId: product.id,
@@ -166,23 +200,25 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       });
     }
 
-    const bookingId = `BK-${Date.now().toString().slice(-6)}`;
-    const bookingNumber = `BK-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
-
-    const bookedAt = bookingDate ? new Date(bookingDate) : new Date();
-    if (!Number.isFinite(bookedAt.getTime())) return res.status(400).json({ error: 'Enter a valid booking date.' });
-
     const booking = await prisma.$transaction(async (tx) => {
+      const year = bookedAt.getFullYear();
+      const prefix = `BK-${year}-`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`;
+      const existingNumbers = await tx.booking.findMany({
+        where: { bookingNumber: { startsWith: prefix } },
+        select: { bookingNumber: true },
+      });
+      const bookingNumber = nextBookingNumber(year, existingNumbers.map(({ bookingNumber }) => bookingNumber));
       const created = await tx.booking.create({
         data: {
-          id: bookingId,
+          id: randomUUID(),
           bookingNumber,
           customerId: customer.id,
           storeName: customer.storeName,
           route: customer.route || customer.area,
           area: customer.area,
           bookingDate: bookedAt,
-          bookerName: bookerName?.trim() || req.user?.name || 'Pedro Booker',
+          bookerName: bookerName.trim(),
           status: 'Booked',
           subtotal: calculatedSubtotal,
           notes: notes || null,
@@ -202,6 +238,10 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 
     res.status(201).json(booking);
   } catch (err: any) {
+    if (err?.code === 'P2002') {
+      return res.status(409).json({ error: 'A booking with this number already exists. Please try saving again.' });
+    }
+    console.error('Failed to create booking:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -214,6 +254,10 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
     const existing = await prisma.booking.findUnique({ where: { id }, include: { items: true } });
     if (!existing) {
       return res.status(404).json({ error: 'Booking not found.' });
+    }
+
+    if (status !== undefined && status !== existing.status) {
+      return res.status(400).json({ error: 'Booking status is updated by the preparation and delivery workflows.' });
     }
 
     if (existing.status === 'Delivered' && req.user?.role !== 'Admin') {
@@ -257,7 +301,6 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       data: {
         bookerName: bookerName?.trim(),
         notes,
-        status: status || undefined,
         subtotal: calculatedSubtotal,
       },
       include: { items: true, customer: true },

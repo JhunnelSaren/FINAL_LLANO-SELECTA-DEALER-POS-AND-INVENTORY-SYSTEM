@@ -121,9 +121,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       icon: Truck,
       color: 'blue',
       value: m.deliveryStatus.inProgress,
-      sub: `${m.deliveryStatus.awaitingReconciliation} routes awaiting reconciliation`,
-      onClick: () => setActiveTab('reconciliation'),
-      alert: m.deliveryStatus.awaitingReconciliation > 0,
+      sub: `${m.deliveryStatus.awaitingReconciliation} completed deliveries`,
+      onClick: () => setActiveTab('orders-delivery'),
+      alert: m.deliveryStatus.inProgress > 0,
     },
     {
       label: 'Outstanding Customer Balances',
@@ -135,12 +135,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       alert: m.outstandingBalances.totalAmount > 0,
     },
     {
-      label: 'Cash Discrepancies & Approvals',
+      label: 'Cash Discrepancies',
       icon: AlertTriangle,
       color: m.discrepancies.pendingApprovalsCount > 0 ? 'rose' : 'emerald',
       value: m.discrepancies.pendingApprovalsCount,
-      sub: `${m.discrepancies.pendingBoCount} BO items pending disposition | ${formatPeso(m.discrepancies.pendingShortageAmount)} shortage`,
-      onClick: () => setActiveTab('reconciliation'),
+      sub: `${m.discrepancies.pendingApprovalsCount} route record(s) pending review | ${m.discrepancies.pendingBoCount} BO items pending disposition | ${formatPeso(m.discrepancies.pendingShortageAmount)} shortage`,
+      onClick: () => setActiveTab('sales-reports'),
       alert: m.discrepancies.pendingApprovalsCount > 0,
     },
     {
