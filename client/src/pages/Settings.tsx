@@ -47,10 +47,10 @@ type LoginPageConfig = {
 };
 
 const defaultLoginPage: LoginPageConfig = {
-  brandName: 'Serenique',
-  welcomeTitle: 'Welcome Back to Serenique',
+  brandName: 'Llano Selecta',
+  welcomeTitle: 'Welcome Back to Llano Selecta',
   welcomeSubtitle: 'Sign in your account',
-  logoUrl: '',
+  logoUrl: '/llano-selecta-logo.png',
   logoIcon: 'home',
   emailLabel: 'Your Email',
   emailPlaceholder: 'Enter your email id here',

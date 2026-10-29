@@ -34,10 +34,10 @@ export type LoginPageConfig = {
 };
 
 export const defaultLoginPage: LoginPageConfig = {
-  brandName: 'Serenique',
-  welcomeTitle: 'Welcome Back to Serenique',
+  brandName: 'Llano Selecta',
+  welcomeTitle: 'Welcome Back to Llano Selecta',
   welcomeSubtitle: 'Sign in your account',
-  logoUrl: '',
+  logoUrl: '/llano-selecta-logo.png',
   logoIcon: 'home',
   emailLabel: 'Your Email',
   emailPlaceholder: 'Enter your email id here',
@@ -105,6 +105,7 @@ export const Login: React.FC = () => {
         setLoginPage({
           ...defaultLoginPage,
           ...data,
+          logoUrl: data.logoUrl || defaultLoginPage.logoUrl,
           slides: defaultLoginPage.slides.map((slide, index) => ({
             ...slide,
             ...(data.slides?.[index] || {}),
@@ -167,7 +168,7 @@ export const Login: React.FC = () => {
         <img
           src={imagePath(loginPage.logoUrl)}
           alt={loginPage.brandName}
-          className="h-4 w-4 object-contain"
+          className="h-full w-full object-contain"
         />
       );
     }
@@ -280,7 +281,7 @@ export const Login: React.FC = () => {
               {/* Brand Pill Badge at the top */}
               <div className="mb-6 flex justify-center">
                 <div className="inline-flex items-center gap-2.5 rounded-full bg-slate-950 px-5 py-2 text-white shadow-lg shadow-black/20">
-                  <div className="flex h-5 w-5 items-center justify-center">
+                  <div className="flex h-10 w-14 items-center justify-center overflow-hidden rounded-lg bg-white p-1">
                     {renderBrandIcon()}
                   </div>
                   <span className="font-serif italic text-sm tracking-wide font-normal">

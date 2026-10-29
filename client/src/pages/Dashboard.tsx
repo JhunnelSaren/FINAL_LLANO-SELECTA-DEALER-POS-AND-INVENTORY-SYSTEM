@@ -122,7 +122,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: 'blue',
       value: m.deliveryStatus.inProgress,
       sub: `${m.deliveryStatus.awaitingReconciliation} routes awaiting reconciliation`,
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => setActiveTab('reconciliation'),
       alert: m.deliveryStatus.awaitingReconciliation > 0,
     },
     {
@@ -140,7 +140,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: m.discrepancies.pendingApprovalsCount > 0 ? 'rose' : 'emerald',
       value: m.discrepancies.pendingApprovalsCount,
       sub: `${m.discrepancies.pendingBoCount} BO items pending disposition | ${formatPeso(m.discrepancies.pendingShortageAmount)} shortage`,
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => setActiveTab('reconciliation'),
       alert: m.discrepancies.pendingApprovalsCount > 0,
     },
     {

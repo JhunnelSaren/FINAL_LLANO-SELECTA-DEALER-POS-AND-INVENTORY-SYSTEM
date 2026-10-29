@@ -5,6 +5,7 @@ import {
   Package,
   Store,
   FileText,
+  FileCheck,
   Settings as SettingsIcon,
   LogOut,
   User as UserIcon,
@@ -76,10 +77,11 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Exactly five primary navigation items
+  // Primary navigation
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'orders-delivery', label: 'Orders & Delivery', icon: Truck },
+    { id: 'reconciliation', label: 'Reconciliation', icon: FileCheck },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'stores-freezers', label: 'Stores & Freezers', icon: Store },
     { id: 'sales-reports', label: 'Sales & Reports', icon: FileText },
@@ -133,11 +135,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             onClick={() => setActiveTab('dashboard')}
             className="flex items-center gap-3 cursor-pointer select-none group"
           >
-            <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-600 via-rose-700 to-red-800 text-white font-black flex items-center justify-center text-xl shadow-md shadow-rose-600/20 group-hover:scale-105 transition-transform">
-                S
-              </div>
-              <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-sm" />
+            <div className="relative flex h-12 w-14 items-center justify-center overflow-hidden rounded-xl bg-white group-hover:scale-105 transition-transform">
+              <img src="/llano-selecta-logo.png" alt="Llano Selecta logo" className="h-full w-full object-contain" />
             </div>
 
             <div>
@@ -155,7 +154,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             </div>
           </div>
 
-          {/* Exactly 5 Primary Navigation Tabs */}
+          {/* Primary Navigation Tabs */}
           <nav className="hidden lg:flex items-center gap-1.5 bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200/60 shadow-inner">
             {navItems.map((item) => {
               const Icon = item.icon;

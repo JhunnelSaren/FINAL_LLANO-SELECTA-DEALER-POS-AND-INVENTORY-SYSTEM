@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, Package, Truck, FileCheck, Plus, Download, Upload, Search, X } from 'lucide-react';
+import { ClipboardList, Package, Truck, Plus, Download, Upload, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import { apiRequest } from '../utils/api';
@@ -11,7 +11,6 @@ const subTabs = [
   { id: 'receiving', label: 'Stock Receiving', icon: Package },
   { id: 'prepare', label: 'Prepare & Load', icon: Truck },
   { id: 'delivery', label: 'Delivery', icon: Truck },
-  { id: 'reconciliation', label: 'Reconciliation', icon: FileCheck },
 ] as const;
 type SubTab = typeof subTabs[number]['id'];
 
@@ -353,7 +352,7 @@ function DeliveryTab() {
   const markBackload = async (stopId: string) => {
     const reason = window.prompt('Why could the store not receive the delivery?', 'Store closed');
     if (!reason?.trim()) return;
-    try { await apiRequest(`/delivery/stops/${stopId}/fail`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) }); showToast('Stop marked as failed; full load recorded as backload for reconciliation.'); await loadData(); } catch (e: any) { showToast(e.message, 'error'); }
+    try { await apiRequest(`/delivery/stops/${stopId}/fail`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) }); showToast('Stop marked as failed; full load recorded as backload.'); await loadData(); } catch (e: any) { showToast(e.message, 'error'); }
   };
 
   return <div className="space-y-4"><div className="bg-white rounded-xl border overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 border-b"><tr><th className="text-left px-4 py-3">Run #</th><th className="text-left px-4 py-3">Area</th><th className="text-left px-4 py-3">Driver</th><th className="text-center px-4 py-3">Stops</th><th className="text-center px-4 py-3">Status</th><th className="text-center px-4 py-3">Actions</th></tr></thead><tbody>{loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Loading…</td></tr> : runs.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">No delivery runs</td></tr> : runs.map(run => <tr key={run.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-medium text-rose-700">{run.runNumber}</td><td className="px-4 py-3">{run.area || run.route}</td><td className="px-4 py-3">{run.driver}</td><td className="px-4 py-3 text-center">{run.stops?.length || 0}</td><td className="px-4 py-3 text-center"><span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusColor(run.status)}`}>{run.status}</span></td><td className="px-4 py-3 text-center"><button onClick={() => setSelectedRun(selectedRun?.id === run.id ? null : run)} className="text-rose-600 hover:underline text-sm font-semibold">{selectedRun?.id === run.id ? 'Hide stops' : 'Open stops'}</button></td></tr>)}</tbody></table></div>
@@ -371,56 +370,6 @@ function DeliveryTab() {
   <div className="flex justify-end gap-2"><button onClick={() => setStopForm(null)} className="px-4 py-2 border rounded text-sm">Cancel</button><button onClick={() => handleRecordStop(stop.id)} disabled={submitting} className="px-4 py-2 bg-emerald-600 text-white rounded text-sm font-semibold disabled:opacity-50">{submitting ? 'Saving…' : 'Save Delivery and Payment'}</button></div></div>}</div>)}</div>}
   </div>;
 }
-function ReconciliationTab() {
-  const { isAdmin } = useAuth();
-  const { showToast } = useToast();
-  const [runs, setRuns] = useState<DeliveryRun[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedRunId, setSelectedRunId] = useState('');
-  const [recon, setRecon] = useState<any>(null);
-  const [actualCash, setActualCash] = useState(0);
-  const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const loadRuns = useCallback(async () => { setLoading(true); try { const data = await apiRequest<any>('/delivery'); const list = Array.isArray(data) ? data : data.runs || []; setRuns(list.filter((run: DeliveryRun) => run.status === 'Delivered' || run.status === 'Reconciled')); } catch (e: any) { showToast(e.message, 'error'); } setLoading(false); }, []);
-  useEffect(() => { loadRuns(); }, [loadRuns]);
-
-  const loadRecon = async (runId: string) => { setSelectedRunId(runId); setRecon(null); if (!runId) return; try { const data = await apiRequest<any>(`/reconciliation?runId=${runId}`); setRecon(data); if (data?.actualCashCounted !== undefined) setActualCash(data.actualCashCounted); } catch (e: any) { showToast(e.message, 'error'); } };
-
-  const handleSubmit = async () => {
-    if (!selectedRunId) return;
-    setSubmitting(true);
-    try { await apiRequest('/reconciliation', { method: 'POST', body: JSON.stringify({ deliveryRunId: selectedRunId, actualCashCounted: actualCash, discrepancyReason: notes }) }); showToast('Reconciliation saved.'); await loadRecon(selectedRunId); } catch (e: any) { showToast(e.message, 'error'); }
-    setSubmitting(false);
-  };
-
-  const handleApprove = async (id: string) => {
-    if (!confirm('Approve?')) return;
-    try { await apiRequest(`/reconciliation/${id}/approve`, { method: 'POST', body: JSON.stringify({ adminNotes: notes }) }); showToast('Reconciliation approved and inventory finalized.'); await loadRecon(selectedRunId); } catch (e: any) { showToast(e.message, 'error'); }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="bg-white rounded-xl border p-4"><label className="block text-sm font-semibold mb-2">Select Delivery Run</label><select value={selectedRunId} onChange={e => loadRecon(e.target.value)} className="w-full max-w-md border rounded-lg px-3 py-2 text-sm"><option value="">â€” Select â€”</option>{runs.map(r => <option key={r.id} value={r.id}>{r.runNumber} â€” {r.route} â€” {formatDate(r.deliveryDate)} ({r.status})</option>)}</select></div>
-      {recon && <div className="bg-white rounded-xl border p-6 space-y-4">
-        <h4 className="font-bold text-slate-800">Reconciliation</h4>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">Expected</div><div className="text-lg font-bold">{formatPeso(recon.expectedCash)}</div></div>
-          <div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">Actual</div><div className="text-lg font-bold">{formatPeso(recon.actualCashCounted)}</div></div>
-          <div className={`rounded-lg p-3 text-center ${(recon.cashVariance || 0) < 0 ? 'bg-rose-50' : 'bg-emerald-50'}`}><div className="text-xs text-slate-500">Variance</div><div className={`text-lg font-bold ${(recon.cashVariance || 0) < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatPeso(recon.cashVariance)}</div></div>
-          <div className="bg-slate-50 rounded-lg p-3 text-center"><div className="text-xs text-slate-500">Status</div><span className={`px-2 py-1 rounded-full text-xs font-semibold border ${getStatusColor(recon.status)}`}>{recon.status}</span></div>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div>Loaded units: <strong>{recon.summary?.totalLoadedUnits ?? 0}</strong></div><div>Accepted: <strong>{recon.summary?.totalDeliveredAccepted ?? 0}</strong></div><div>Intact backload: <strong>{recon.summary?.totalIntactReturned ?? 0}</strong></div><div>BO quarantined: <strong>{recon.summary?.totalBoReturned ?? 0}</strong></div><div>GCash: <strong>{formatPeso(recon.summary?.totalGcash ?? 0)}</strong></div><div>Checks: <strong>{formatPeso(recon.summary?.totalChecks ?? 0)}</strong></div><div>Outstanding credit: <strong>{formatPeso(recon.summary?.totalOutstandingCredit ?? 0)}</strong></div></div>
-        {(recon.status === 'Draft' || recon.status === 'Pending Approval' || recon.status === 'Approved') && recon.status !== 'Approved' && <div className="border-t pt-4 space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><label className="block text-sm font-semibold mb-1">Cash Counted (₱)</label><input type="number" min={0} step="0.01" value={actualCash} onChange={e => setActualCash(parseFloat(e.target.value) || 0)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div><div><label className="block text-sm font-semibold mb-1">Variance / shortage notes</label><input type="text" value={notes} onChange={e => setNotes(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div></div>
-          <button onClick={handleSubmit} disabled={submitting} className="px-6 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{submitting ? 'Saving...' : recon.status === 'Pending Approval' ? 'Update Reconciliation' : 'Submit Reconciliation'}</button>
-        </div>}
-        {isAdmin && recon.status === 'Pending Approval' && recon.id && <button onClick={() => handleApprove(recon.id)} className="px-6 py-2 bg-emerald-600 text-white rounded-lg text-sm font-semibold">Approve and Finalize Inventory</button>}
-      </div>}
-    </div>
-  );
-}
-
 // â”€â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export default function OrdersDelivery() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('bookings');
@@ -431,7 +380,6 @@ export default function OrdersDelivery() {
       {activeSubTab === 'receiving' && <StockReceivingTab />}
       {activeSubTab === 'prepare' && <PrepareLoadTab />}
       {activeSubTab === 'delivery' && <DeliveryTab />}
-      {activeSubTab === 'reconciliation' && <ReconciliationTab />}
     </div>
   );
 }
