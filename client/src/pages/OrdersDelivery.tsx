@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ClipboardList, Package, Truck, Plus, Download, Upload, Search, X } from 'lucide-react';
+import { ClipboardList, Package, Truck, Plus, Download, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import { apiRequest } from '../utils/api';
@@ -88,17 +88,6 @@ function BookingsTab() {
     } catch (e: any) { showToast(e.message, 'error'); }
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const fd = new FormData(); fd.append('file', file);
-    try {
-      const res = await apiRequest<any>('/bookings/import', { method: 'POST', body: fd });
-      showToast(`Imported ${res.importedCount} booking(s)!`);
-      loadData();
-    } catch (e: any) { showToast(e.message, 'error'); }
-    e.target.value = '';
-  };
-
   const handleConsolidated = async () => {
     try {
       const params = new URLSearchParams();
@@ -122,7 +111,6 @@ function BookingsTab() {
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setShowForm(true)} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-rose-700 flex items-center gap-2"><Plus className="h-4 w-4" />New Booking</button>
         <button onClick={handleExport} className="bg-white border text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 flex items-center gap-2"><Download className="h-4 w-4" />Export Excel</button>
-        <label className="bg-white border text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 flex items-center gap-2 cursor-pointer"><Upload className="h-4 w-4" />Import<input type="file" accept=".xlsx,.xls,.csv" onChange={handleImport} className="hidden" /></label>
         <button onClick={handleConsolidated} className="bg-white border text-slate-700 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50">Summary</button>
       </div>
       <div className="bg-white rounded-xl border overflow-x-auto">
