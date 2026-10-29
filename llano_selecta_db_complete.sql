@@ -16,7 +16,8 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ----------------------------------------------------------------------------
 -- 1. CLEANUP PREVIOUS TABLES (Safe initialization)
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS "AuditLog" CASCADE;
+DROP TABLE IF EXISTS "AuditLog" CASCADE;DATABASE_URL="postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/llano_selecta_db?schema=public"
+JWT_SECRET="replace-with-a-long-random-secret"
 DROP TABLE IF EXISTS "SystemSetting" CASCADE;
 DROP TABLE IF EXISTS "SelectaPosQuotaEntry" CASCADE;
 DROP TABLE IF EXISTS "SelectaPosQuota" CASCADE;
