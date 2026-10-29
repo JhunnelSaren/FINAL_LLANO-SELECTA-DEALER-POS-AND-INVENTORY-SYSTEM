@@ -1,0 +1,436 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated-prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  name         String
+  email        String    @unique
+  role         String // "Admin" | "Staff"
+  accessKey    String    @unique @map("access_key")
+  passwordHash String    @map("password_hash")
+  phone        String?
+  status       String    @default("Active") // "Active" | "Inactive"
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@map("users")
+}
+
+model Product {
+  id              String   @id // e.g. "COR-001"
+  sku             String?  @unique
+  name            String
+  category        String // "CORNETTO", "MAGNUM", "STICKS", "SUPREME 1.3L"
+  flavor          String?
+  unit            String   @default("Piece") // "Piece", "Pack", "Tub"
+  dealerPrice     Decimal? @default(0.0) @map("dealer_price") @db.Decimal(10, 2)
+  sellingPrice    Decimal  @default(0.0) @map("unit_price") @db.Decimal(10, 2)
+  srp             Decimal? @default(0.0) @db.Decimal(10, 2)
+  stock           Int      @default(0) // Saleable physical inventory
+  quarantineStock Int      @default(0) // Damaged/BO/quarantined inventory
+  reservedStock   Int      @default(0) // Allocated/picked for delivery
+  minStock        Int      @default(15) @map("min_stock") // Safety re-order threshold
+  barcode         String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("products")
+}
+
+model Customer {
+  id                   String         @id // e.g. "CUST-001"
+  storeName            String         @map("store_name")
+  ownerName            String?        @map("owner_name")
+  owner                String?
+  contact              String?
+  area                 String // "Valencia", "Cabanglasan", "San Fernando"
+  subArea              String?        @map("sub_area") // "Batangan", "San Isidro", "Poblacion", "Halapitan", etc.
+  purok                String?
+  route                String?
+  address              String?
+  freezerSerial        String?        @map("freezer_serial")
+  barcodeNo            String?        @map("barcode_no")
+  status               String         @default("Active") // "Active" | "Inactive"
+  notes                String?
+  currentBalance       Float          @default(0.0) @map("current_balance") // Outstanding unpaid customer balance
+  deploymentPaperRef   String?        @map("deployment_paper_ref")
+  deploymentPaperPhoto String?        @map("deployment_paper_photo")
+  dateAdded            DateTime       @default(now()) @map("date_joined") @db.Date
+  lastOrderAt          DateTime?      @map("last_order_at")
+  storePhotoPath       String?        @map("store_photo_path")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt
+  bookings             Booking[]
+  freezers             Freezer[]
+  deliveryStops        DeliveryStop[]
+
+  @@map("customers")
+}
+
+model Freezer {
+  id                String                @id // e.g. "FRZ-001"
+  serialNumber      String                @unique // e.g. "SEL-FRZ-8821"
+  barcode           String                @unique // e.g. "BC-8821-VAL"
+  model             String // e.g. "Selecta Glass Top 300L"
+  assignedStoreId   String?
+  assignedStoreName String?
+  assignedOwner     String?
+  area              String                @default("Valencia")
+  status            String                @default("Active") // "Active", "Under Maintenance", "Returned", "Unassigned"
+  custodyDate       DateTime?
+  totalFee          Float                 @default(10000.00)
+  productAllocation Float                 @default(9000.00)
+  processingFee     Float                 @default(1000.00)
+  feePaymentStatus  String                @default("Paid") // "Paid", "Partial", "Unpaid"
+  feePaymentRef     String?
+  condition         String                @default("Good")
+  lastVerifiedAt    DateTime?
+  nextDueAt         DateTime?
+  notes             String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  customer          Customer?             @relation(fields: [assignedStoreId], references: [id])
+  verifications     FreezerVerification[]
+  transactions      FreezerTransaction[]
+}
+
+model FreezerTransaction {
+  id              String   @id @default(cuid())
+  freezerId       String   @map("freezer_id")
+  action          String
+  fromCustomerId  String?  @map("from_customer_id")
+  fromStoreName   String?  @map("from_store_name")
+  fromArea        String?  @map("from_area")
+  toCustomerId    String?  @map("to_customer_id")
+  toStoreName     String?  @map("to_store_name")
+  toArea          String?  @map("to_area")
+  reason          String
+  performedBy     String   @map("performed_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  freezer         Freezer  @relation(fields: [freezerId], references: [id], onDelete: Restrict)
+
+  @@index([freezerId, createdAt])
+  @@map("freezer_transactions")
+}
+
+model FreezerVerification {
+  id                String   @id @default(cuid())
+  freezerId         String
+  verificationMonth String // "YYYY-MM" e.g. "2026-10"
+  scannedAt         DateTime
+  barcodeScanned    String
+  staffName         String
+  photoPath         String?
+  photoUrl          String?
+  status            String   @default("Verified") // "Verified", "Rejected", "Pending Review"
+  notes             String?
+  verifiedBy        String?
+  createdAt         DateTime @default(now())
+  freezer           Freezer  @relation(fields: [freezerId], references: [id])
+}
+
+model Booking {
+  id                    String        @id // e.g. "BK-2026-1001"
+  bookingNumber         String        @unique
+  customerId            String
+  storeName             String
+  route                 String
+  area                  String
+  bookingDate           DateTime
+  requestedDeliveryDate DateTime?
+  bookerName            String
+  status                String        @default("Booked") // "Booked", "Ordered to Bodega", "Prepared", "In Transit", "Delivered", "Cancelled"
+  subtotal              Float         @default(0.0)
+  notes                 String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  customer              Customer      @relation(fields: [customerId], references: [id])
+  items                 BookingItem[]
+}
+
+model BookingItem {
+  id          String  @id @default(cuid())
+  bookingId   String
+  productId   String
+  productName String
+  category    String
+  unitPrice   Float
+  quantity    Int
+  lineTotal   Float
+  booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model BodegaOrder {
+  id                  String            @id @default(cuid())
+  orderNumber         String            @unique // e.g. "ORD-BOD-2026-001"
+  selectaPosRef       String? // External Unilever Selecta POS reference (e.g. "POS-CDO-7719")
+  orderDate           DateTime
+  expectedArrivalDate DateTime
+  staffResponsible    String
+  status              String            @default("Entered in POS") // "Pending Entry", "Entered in POS", "Partially Received", "Received", "Cancelled"
+  totalItemsNeeded    Int               @default(0)
+  totalAmount         Float             @default(0.0)
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  items               BodegaOrderItem[]
+}
+
+model BodegaOrderItem {
+  id            String      @id @default(cuid())
+  bodegaOrderId String
+  productId     String
+  productName   String
+  orderedQty    Int
+  receivedQty   Int         @default(0)
+  unitPrice     Float
+  bodegaOrder   BodegaOrder @relation(fields: [bodegaOrderId], references: [id], onDelete: Cascade)
+}
+
+model StockReceiving {
+  id                 String               @id // e.g. "RCV-2026-001"
+  poNumber           String // Supplier PO / Bodega order reference
+  bodegaOrderId      String?
+  truckPlate         String
+  driverInfo         String?
+  receiverName       String
+  checkerName        String
+  arrivalDate        DateTime
+  status             String               @default("Completed") // "Completed", "Discrepancy Found"
+  totalReceivedValue Float                @default(0.0)
+  receiptPhotoPath   String?
+  remarks            String?
+  createdAt          DateTime             @default(now())
+  items              StockReceivingItem[]
+}
+
+model StockReceivingItem {
+  id               String         @id @default(cuid())
+  receivingId      String
+  productId        String
+  productName      String
+  category         String?
+  expectedQty      Int
+  receivedGoodQty  Int // Enters saleable stock
+  damagedMeltedQty Int            @default(0) // Enters non-saleable quarantine
+  missingQty       Int            @default(0) // Shortage from supplier truck
+  unitPrice        Float
+  notes            String?
+  receiving        StockReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
+}
+
+model DeliveryRun {
+  id             String               @id // e.g. "RUN-2026-1024"
+  runNumber      String               @unique
+  route          String
+  area           String               @default("Valencia")
+  deliveryDate   DateTime
+  vehicle        String               @default("Bongo Refrigerated Van")
+  driver         String
+  loader1        String
+  loader2        String
+  helper         String?
+  collector      String
+  status         String               @default("Prepared") // "Draft", "Prepared", "In Transit", "Delivered", "Reconciled"
+  dispatchedAt   DateTime?
+  completedAt    DateTime?
+  reconciledAt   DateTime?
+  notes          String?
+  createdAt      DateTime             @default(now())
+  stops          DeliveryStop[]
+  reconciliation RouteReconciliation?
+}
+
+model DeliveryStop {
+  id            String           @id @default(cuid())
+  deliveryRunId String
+  bookingId     String
+  customerId    String
+  storeName     String
+  stopOrder     Int              @default(1)
+  status        String           @default("Pending") // "Pending", "In Progress", "Delivered", "Rescheduled", "Failed"
+  recipientName String?
+  deliveredAt   DateTime?
+  notes         String?
+  deliveryRun   DeliveryRun      @relation(fields: [deliveryRunId], references: [id], onDelete: Cascade)
+  customer      Customer         @relation(fields: [customerId], references: [id])
+  items         DeliveryItem[]
+  invoice       CustomerInvoice?
+}
+
+model DeliveryItem {
+  id                String       @id @default(cuid())
+  deliveryStopId    String
+  productId         String
+  productName       String
+  category          String?
+  orderedQty        Int
+  loadedQty         Int
+  acceptedQty       Int // Saleable accepted by store (basis for billing)
+  missingQty        Int          @default(0) // Not delivered / short
+  boRefusedQty      Int          @default(0) // Melted/damaged refused and returned
+  intactReturnedQty Int          @default(0) // Undelivered intact units returned
+  unitPrice         Float
+  notes             String?
+  deliveryStop      DeliveryStop @relation(fields: [deliveryStopId], references: [id], onDelete: Cascade)
+}
+
+model CustomerInvoice {
+  id                    String               @id @default(cuid())
+  invoiceNumber         String               @unique // e.g. "OR-VAL-8821" or "INV-2026-1001"
+  deliveryStopId        String               @unique
+  customerId            String
+  storeName             String
+  invoiceDate           DateTime
+  billableProductAmount Float // Accepted Qty * Unit Price
+  otherCharges          Float                @default(0.0)
+  approvedDiscounts     Float                @default(0.0)
+  priorBalance          Float                @default(0.0)
+  netAmountDue          Float // Billable + other - discount + priorBalance
+  totalPaid             Float                @default(0.0)
+  balanceRemaining      Float                @default(0.0)
+  paymentStatus         String               @default("Unpaid") // "Paid", "Partial", "Unpaid"
+  collectorName         String?
+  customerSignature     String?
+  notes                 String?
+  createdAt             DateTime             @default(now())
+  deliveryStop          DeliveryStop         @relation(fields: [deliveryStopId], references: [id], onDelete: Cascade)
+  payments              PaymentTransaction[]
+}
+
+model PaymentTransaction {
+  id              String          @id @default(cuid())
+  invoiceId       String
+  customerId      String
+  amount          Float
+  paymentMethod   String // "Cash", "GCash", "Bank Transfer", "Check"
+  referenceNumber String?
+  bankName        String?
+  checkDate       DateTime?
+  checkStatus     String? // "Pending", "Cleared", "Bounced"
+  collectedBy     String
+  recordedAt      DateTime        @default(now())
+  notes           String?
+  invoice         CustomerInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model RouteReconciliation {
+  id                      String      @id @default(cuid())
+  deliveryRunId           String      @unique
+  reconciliationDate      DateTime
+  totalLoadedUnits        Int
+  totalDeliveredAccepted  Int
+  totalIntactReturned     Int
+  totalBoReturned         Int
+  totalMissingUnaccounted Int
+  expectedCash            Float
+  actualCashCounted       Float
+  cashVariance            Float // actual - expected (negative = shortage)
+  totalGcash              Float       @default(0.0)
+  totalBankTransfer       Float       @default(0.0)
+  totalChecks             Float       @default(0.0)
+  totalClearedFunds       Float       @default(0.0)
+  outstandingCredit       Float       @default(0.0)
+  discrepancyReason       String?
+  status                  String      @default("Pending Approval") // "Pending Approval", "Approved", "Exception Closed"
+  approvedBy              String?
+  approvedAt              DateTime?
+  createdAt               DateTime    @default(now())
+  deliveryRun             DeliveryRun @relation(fields: [deliveryRunId], references: [id], onDelete: Cascade)
+}
+
+model InventoryLedger {
+  id                String   @id @default(cuid())
+  productId         String?  @map("product_id")
+  productName       String   @map("product_name")
+  category          String?
+  movementType      String   @map("type") // "Supplier Receiving", "Picking", "Dispatch", "Sale Delivered", "Intact Return", "BO Quarantine", "BO Disposition", "Physical Adjustment"
+  changeQty         Int      @map("change_qty") // + or -
+  runningSaleable   Int      @default(100) @map("running_on_hand")
+  runningQuarantine Int      @default(0)
+  reference         String?  @map("reference_no") // Reference ID (PO, Run, Invoice, Adj)
+  staffName         String?  @map("staff")
+  notes             String?
+  createdAt         DateTime @default(now()) @map("timestamp")
+
+  @@map("inventory_ledger")
+}
+
+model BoDiscrepancy {
+  id             String    @id // e.g. "BO-2026-001"
+  deliveryRef    String?
+  storeName      String?
+  productId      String
+  productName    String
+  category       String?
+  quantity       Int
+  unitPrice      Float
+  totalDeduction Float
+  reason         String
+  reportedBy     String
+  disposition    String    @default("Pending") // "Pending" | "Refunded"
+  dispositionBy  String?
+  dispositionAt  DateTime?
+  notes          String?
+  createdAt      DateTime  @default(now())
+}
+
+model SelectaPosQuota {
+  id            String                 @id @default(cuid())
+  monthYear     String                 @unique // e.g. "2026-10"
+  targetAmount  Float                  @default(1000000.00)
+  recordedSales Float                  @default(0.0) // Confirmed Selecta POS external sales entries
+  notes         String?
+  updatedAt     DateTime               @updatedAt
+  entries       SelectaPosQuotaEntry[]
+}
+
+model SelectaPosQuotaEntry {
+  id            String          @id @default(cuid())
+  quotaId       String
+  entryDate     DateTime
+  selectaPosRef String // e.g. "POS-CDO-7719", "Z-Read 10/24"
+  amount        Float
+  enteredBy     String
+  remarks       String?
+  createdAt     DateTime        @default(now())
+  quota         SelectaPosQuota @relation(fields: [quotaId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  module    String
+  user      String
+  details   String // JSON string
+  timestamp DateTime @default(now())
+}
+
+model SystemSetting {
+  id                       String   @id @default("SYSTEM_SETTINGS")
+  dealerName               String   @default("Llano Selecta Dealer")
+  address                  String   @default("Sayre Highway, Valencia City, Bukidnon")
+  contactNumber            String   @default("0917-123-4567")
+  receiptHeader            String   @default("Llano Selecta Authorized Dealer - Cold Chain Ice Cream Distribution")
+  defaultQuotaTarget       Float    @default(1000000.00)
+  freezerTotalFee          Float    @default(10000.00)
+  freezerProductAllocation Float    @default(9000.00)
+  freezerProcessingFee     Float    @default(1000.00)
+  mondayRoute              String   @default("Valencia – San Fernando Route")
+  tuesdayRoute             String   @default("Cabanglasan Delivery Route")
+  wednesdayActivity        String   @default("Selecta Bodega Stock Arrival & Verification")
+  thursdayRoute            String   @default("Cabanglasan Bongo Delivery Run")
+  fridayRoute              String   @default("Valencia – San Fernando Bongo Delivery Run")
+  allowNegativeStock       Boolean  @default(false)
+  loginPageConfig          String   @default("{}")
+  updatedAt                DateTime @updatedAt
+}

@@ -1,0 +1,8 @@
+node_modules
+dist
+/server/generated-prisma/
+.env
+*.log
+dev.db-journal
+uploads/*
+!uploads/.gitkeep
