@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ClipboardList, Package, Truck, Plus, Download, Search, X } from 'lucide-react';
+import { ClipboardList, Package, Truck, Plus, Download, Search, X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import { apiRequest } from '../utils/api';
@@ -13,6 +13,26 @@ const subTabs = [
   { id: 'delivery', label: 'Delivery', icon: Truck },
 ] as const;
 type SubTab = typeof subTabs[number]['id'];
+
+type DeliveryFormLine = {
+  deliveryItemId: string;
+  acceptedQty: number | string;
+  boQty: number | string;
+};
+
+function getDeliveryQuantityError(productName: string, loadedQty: number, line?: DeliveryFormLine): string | null {
+  if (!line) return `${productName}: enter accepted and BO damaged quantities.`;
+  const values = [['accepted', line.acceptedQty], ['BO damaged', line.boQty]] as const;
+  for (const [label, rawValue] of values) {
+    if (rawValue === '' || !Number.isSafeInteger(Number(rawValue)) || Number(rawValue) < 0) {
+      return `${productName}: ${label} quantity must be a whole number of units and cannot be negative.`;
+    }
+  }
+  const [accepted, boDamaged] = values.map(([, value]) => Number(value));
+  if (accepted > loadedQty) return `${productName}: accepted quantity ${accepted} exceeds loaded quantity ${loadedQty}.`;
+  if (boDamaged > accepted) return `${productName}: BO damaged quantity ${boDamaged} cannot exceed accepted quantity ${accepted}.`;
+  return null;
+}
 
 // â”€â”€â”€ BOOKINGS TAB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function BookingsTab() {
@@ -372,6 +392,7 @@ function DeliveryTab() {
   const [selectedRun, setSelectedRun] = useState<DeliveryRun | null>(null);
   const [stopForm, setStopForm] = useState<any>(null);
   const [submitting, setSubmitting] = useState(false);
+  const submissionLock = useRef(false);
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -388,40 +409,61 @@ function DeliveryTab() {
   useEffect(() => { loadData(); }, [loadData]);
 
   const handleRecordStop = async (stopId: string) => {
-    if (!stopForm) return;
+    if (!stopForm || submissionLock.current) return;
     const stop = selectedRun?.stops?.find(item => item.id === stopId);
     if (!stop) { showToast('Refresh the delivery run and try again.', 'error'); return; }
-    const invalidLines = stop.items?.some((item, index) => {
-      const line = stopForm.items[index];
-      const quantities = [Number(line?.acceptedQty), Number(line?.missingQty), Number(line?.boQty)];
-      return quantities.some(value => !Number.isInteger(value) || value < 0) || quantities.reduce((sum, value) => sum + value, 0) > item.loadedQty;
-    });
-    if (invalidLines) { showToast('Accepted, short, and BO quantities must be whole numbers that do not exceed the loaded quantity.', 'warning'); return; }
-    const totalBill = stopForm.items.reduce((sum: number, line: any) => {
-      const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
-      return sum + (Number(line.acceptedQty) || 0) * Number(item?.unitPrice || 0);
-    }, 0) + Number(stop.customer?.currentBalance || 0);
+    const quantityErrors = stop.items.map(item => getDeliveryQuantityError(
+      item.productName,
+      item.loadedQty,
+      stopForm.items.find((line: DeliveryFormLine) => line.deliveryItemId === item.id),
+    )).filter(Boolean);
+    if (quantityErrors.length) { showToast(quantityErrors[0]!, 'warning'); return; }
+    if (!String(stopForm.recipientName || '').trim()) { showToast('Enter who received the delivery.', 'warning'); return; }
+    if (!['Cash', 'GCash', 'Bank Transfer', 'Check'].includes(stopForm.paymentMethod)) {
+      showToast('Choose a valid payment method.', 'warning');
+      return;
+    }
+    if (stopForm.amountPaid === '') { showToast('Enter the amount collected. Enter 0 if no payment was collected.', 'warning'); return; }
     const amountPaid = Number(stopForm.amountPaid);
-    if (!Number.isFinite(amountPaid) || amountPaid < 0 || amountPaid > totalBill) {
-      showToast('Amount collected must be between zero and the total bill.', 'warning'); return;
+    if (!Number.isFinite(amountPaid) || amountPaid < 0 || Math.round(amountPaid * 100) !== amountPaid * 100) {
+      showToast('Amount collected must be a nonnegative amount with no more than two decimal places.', 'warning');
+      return;
     }
-    if (amountPaid > 0 && stopForm.paymentMethod !== 'Cash' && !stopForm.paymentReference.trim()) {
-      showToast('Enter the GCash or bank check reference number.', 'warning'); return;
+    const grossProductBill = stop.items.reduce((sum, item) => {
+      const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
+      return sum + Number(line.acceptedQty) * Number(item.unitPrice);
+    }, 0);
+    const boDeduction = stop.items.reduce((sum, item) => {
+      const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
+      return sum + Number(line.boQty) * Number(item.unitPrice);
+    }, 0);
+    const totalBill = Math.max(0, grossProductBill - boDeduction) + Number(stop.customer?.currentBalance || 0);
+    if (amountPaid > totalBill) { showToast('Amount collected cannot exceed the delivery bill plus the previous balance.', 'warning'); return; }
+    if (amountPaid > 0 && stopForm.paymentMethod !== 'Cash' && !String(stopForm.paymentReference || '').trim()) {
+      showToast(`Enter the ${stopForm.paymentMethod} payment reference.`, 'warning');
+      return;
     }
-    if (amountPaid > 0 && stopForm.paymentMethod === 'Check' && (!stopForm.bankName.trim() || !stopForm.checkDate)) {
-      showToast('Enter the bank name and date for this bank check.', 'warning'); return;
+    if (amountPaid > 0 && stopForm.paymentMethod === 'Check'
+      && (!String(stopForm.bankName || '').trim() || !stopForm.checkDate || !Number.isFinite(new Date(stopForm.checkDate).getTime()))) {
+      showToast('Enter the bank name and a valid check date.', 'warning');
+      return;
     }
+    submissionLock.current = true;
     setSubmitting(true);
     try {
-      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName, paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, items: stopForm.items.map((line: any) => ({ id: line.deliveryItemId, acceptedQty: line.acceptedQty, missingQty: line.missingQty, boRefusedQty: line.boQty })) }) });
+      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName.trim(), paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, items: stopForm.items.map((line: DeliveryFormLine) => ({ id: line.deliveryItemId, acceptedQty: Number(line.acceptedQty), boRefusedQty: Number(line.boQty) })) }) });
       showToast('Delivery, BO credit, receipt, and payment saved.'); setStopForm(null); await loadData();
     } catch (e: any) { showToast(e.message, 'error'); }
-    finally { setSubmitting(false); }
+    finally { submissionLock.current = false; setSubmitting(false); }
   };
   const markBackload = async (stopId: string) => {
+    if (submissionLock.current) return;
     const reason = window.prompt('Why could the store not receive the delivery?', 'Store closed');
     if (!reason?.trim()) return;
+    submissionLock.current = true;
+    setSubmitting(true);
     try { await apiRequest(`/delivery/stops/${stopId}/fail`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() }) }); showToast('Stop marked as failed; full load recorded as backload.'); await loadData(); } catch (e: any) { showToast(e.message, 'error'); }
+    finally { submissionLock.current = false; setSubmitting(false); }
   };
 
   return (
@@ -446,31 +488,53 @@ function DeliveryTab() {
         {selectedRun.stops?.map((stop, index) => {
           const stopInvoice = (stop as any).invoice;
           const activeForm = stopForm?.stopId === stop.id;
-          const orderAmount = (lines: any[]) => lines.reduce((sum: number, line: any) => {
+          const orderAmount = (lines: DeliveryFormLine[]) => lines.reduce((sum: number, line: DeliveryFormLine) => {
             const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
             return sum + (Number(line.acceptedQty) || 0) * Number(item?.unitPrice || 0);
           }, 0);
-          const boAmount = (lines: any[]) => lines.reduce((sum: number, line: any) => {
+          const boAmount = (lines: DeliveryFormLine[]) => lines.reduce((sum: number, line: DeliveryFormLine) => {
             const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
             return sum + (Number(line.boQty) || 0) * Number(item?.unitPrice || 0);
           }, 0);
           const previousBalance = Number(stop.customer?.currentBalance || 0);
           const orderTotal = activeForm ? orderAmount(stopForm.items) : 0;
           const currentBoTotal = activeForm ? boAmount(stopForm.items) : 0;
-          const totalBill = orderTotal + previousBalance;
-          const collected = activeForm ? Number(stopForm.amountPaid) || 0 : 0;
+          const finalProductBill = Math.max(0, orderTotal - currentBoTotal);
+          const totalBill = finalProductBill + previousBalance;
+          const collected = activeForm && stopForm.amountPaid !== '' ? Number(stopForm.amountPaid) || 0 : 0;
           const clearedCollected = activeForm && stopForm.paymentMethod !== 'Check' ? collected : 0;
-          const invalidQuantity = activeForm && stop.items?.some((item, itemIndex) => {
-            const line = stopForm.items[itemIndex];
-            return Number(line.acceptedQty) + Number(line.missingQty) + Number(line.boQty) > item.loadedQty;
-          });
+          const quantityErrors = activeForm ? stop.items.map(item => getDeliveryQuantityError(
+            item.productName,
+            item.loadedQty,
+            stopForm.items.find((line: DeliveryFormLine) => line.deliveryItemId === item.id),
+          )).filter((error): error is string => Boolean(error)) : [];
+          const invalidQuantity = quantityErrors.length > 0;
+          const amountValid = activeForm
+            && stopForm.amountPaid !== ''
+            && Number.isFinite(Number(stopForm.amountPaid))
+            && Number(stopForm.amountPaid) >= 0
+            && Math.round(Number(stopForm.amountPaid) * 100) === Number(stopForm.amountPaid) * 100
+            && Number(stopForm.amountPaid) <= totalBill;
+          const requiresPaymentReference = activeForm && collected > 0 && stopForm.paymentMethod !== 'Cash';
+          const missingPaymentDetails = requiresPaymentReference && (
+            !String(stopForm.paymentReference || '').trim()
+            || (stopForm.paymentMethod === 'Check'
+              && (!String(stopForm.bankName || '').trim() || !stopForm.checkDate))
+          );
+          const canSave = activeForm
+            && !submitting
+            && !invalidQuantity
+            && Boolean(String(stopForm.recipientName || '').trim())
+            && ['Cash', 'GCash', 'Bank Transfer', 'Check'].includes(stopForm.paymentMethod)
+            && Boolean(amountValid)
+            && !missingPaymentDetails;
 
           return <div key={stop.id} className="border-b px-4 py-3 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><span className="font-medium">#{index + 1}: {stop.storeName}</span><span className={`ml-2 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusColor(stop.status)}`}>{stop.status}</span></div>
               {selectedRun.status === 'In Transit' && (stop.status === 'Pending' || stop.status === 'In Progress') && <div className="flex gap-2">
-                <button type="button" onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, missingQty: 0, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Record Delivery</button>
-                <button type="button" onClick={() => markBackload(stop.id)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white">Failed / Backload</button>
+                <button type="button" disabled={submitting} onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Record Delivery</button>
+                <button type="button" disabled={submitting} onClick={() => markBackload(stop.id)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Failed / Backload</button>
               </div>}
             </div>
             {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700">Backload reason: {stop.notes || 'Delivery failed'}</p>}
@@ -478,43 +542,61 @@ function DeliveryTab() {
               <div>BO deduction: <strong>{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div><div>Total bill: <strong>{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div><div>Amount collected: <strong>{formatPeso((stopInvoice.payments || []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0))}</strong></div><div>Applied to balance: <strong>{formatPeso(Number(stopInvoice.totalPaid) || 0)}</strong></div><div>Balance: <strong>{formatPeso(Number(stopInvoice.balanceRemaining) || 0)}</strong></div>
             </div>}
 
-            {activeForm && <div className="mt-3 space-y-3 rounded-lg bg-slate-50 p-4">
-              <div className="overflow-x-auto"><table className="w-full text-sm">
-                <thead><tr className="text-left"><th className="px-2 py-1">Product</th><th className="px-2 py-1 text-right">Loaded</th><th className="px-2 py-1">Accepted</th><th className="px-2 py-1">Short</th><th className="px-2 py-1">BO</th><th className="px-2 py-1 text-right">BO credit</th><th className="px-2 py-1 text-right">Billable</th></tr></thead>
-                <tbody>{stop.items?.map((item, itemIndex) => {
-                  const line = stopForm.items[itemIndex];
-                  const updateLine = (field: 'acceptedQty' | 'missingQty' | 'boQty', value: number) => {
-                    setStopForm((current: any) => {
-                      const updated = { ...current, items: [...current.items] };
-                      updated.items[itemIndex] = { ...updated.items[itemIndex], [field]: Math.max(0, Number.isFinite(value) ? value : 0) };
-                      return updated;
-                    });
-                  };
-                  return <tr key={item.id}>
-                    <td className="px-2 py-1">{item.productName}</td><td className="px-2 py-1 text-right text-slate-500">{item.loadedQty}</td>
-                    {(['acceptedQty', 'missingQty', 'boQty'] as const).map(field => <td key={field} className="px-2 py-1"><input type="number" min={0} step={1} max={item.loadedQty} value={line?.[field] ?? 0} onChange={event => updateLine(field, Number(event.target.value))} className="w-20 rounded border px-2 py-1 text-right" aria-label={`${item.productName} ${field}`} /></td>)}
-                    <td className="px-2 py-1 text-right font-medium text-rose-700">{formatPeso((Number(line?.boQty) || 0) * item.unitPrice)}</td><td className="px-2 py-1 text-right font-medium">{formatPeso((Number(line?.acceptedQty) || 0) * item.unitPrice)}</td>
-                  </tr>;
-                })}</tbody>
-              </table></div>
-              {invalidQuantity && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">Accepted, short, and BO quantities cannot exceed the loaded amount.</p>}
-              <div className="grid grid-cols-2 gap-2 rounded-lg border bg-white p-3 text-sm sm:grid-cols-3">
-                <div>Product bill (accepted): <strong>{formatPeso(orderTotal)}</strong></div>
-                <div>BO returned / deducted: <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
-                <div>Value before BO deduction: <strong>{formatPeso(orderTotal + currentBoTotal)}</strong></div>
+            {activeForm && <div className="mt-3 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+              <div className="overflow-x-auto rounded-lg border bg-white">
+                <table className="w-full min-w-[760px] table-fixed text-sm">
+                  <colgroup><col className="w-[35%]" /><col className="w-[12%]" /><col className="w-[15%]" /><col className="w-[15%]" /><col className="w-[23%]" /></colgroup>
+                  <thead className="bg-slate-50"><tr className="text-left"><th className="px-3 py-2">Product</th><th className="px-2 py-2 text-right">Loaded</th><th className="px-2 py-2">Accepted</th><th className="px-2 py-2">BO damaged</th><th className="px-2 py-2 text-right">Billable</th></tr></thead>
+                  <tbody>{stop.items?.map(item => {
+                    const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
+                    const updateLine = (field: 'acceptedQty' | 'boQty', value: string) => {
+                      setStopForm((current: any) => ({
+                        ...current,
+                        items: current.items.map((entry: DeliveryFormLine) => entry.deliveryItemId === item.id
+                          ? { ...entry, [field]: value === '' ? '' : Number(value) }
+                          : entry),
+                      }));
+                    };
+                    const lineError = getDeliveryQuantityError(item.productName, item.loadedQty, line);
+                    return <React.Fragment key={item.id}>
+                      <tr className="border-t">
+                        <td className="break-words px-3 py-2 font-medium">{item.productName}</td>
+                        <td className="px-2 py-2 text-right text-slate-500">{item.loadedQty}</td>
+                        {(['acceptedQty', 'boQty'] as const).map(field => <td key={field} className="px-2 py-2"><input type="number" min={0} step={1} max={item.loadedQty} value={line?.[field] ?? ''} onChange={event => updateLine(field, event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-2 text-right focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-label={`${item.productName} ${field}`} /></td>)}
+                        <td className="px-2 py-2 text-right font-medium">{formatPeso(Math.max(0, (Number(line?.acceptedQty) - Number(line?.boQty)) * item.unitPrice))}</td>
+                      </tr>
+                      {lineError && <tr><td colSpan={5} className="px-3 pb-2 text-xs font-medium text-red-700">{lineError}</td></tr>}
+                    </React.Fragment>;
+                  })}</tbody>
+                </table>
+              </div>
+              {invalidQuantity && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{quantityErrors[0]}</div>}
+              <div className="grid grid-cols-1 gap-3 rounded-lg border bg-white p-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
+                <div>Product bill: <strong>{formatPeso(orderTotal)}</strong></div>
+                <div>BO deduction: <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
+                <div>Final product bill: <strong>{formatPeso(finalProductBill)}</strong></div>
                 <div>Previous balance: <strong>{formatPeso(previousBalance)}</strong></div>
                 <div>Total bill: <strong className="text-rose-700">{formatPeso(totalBill)}</strong></div>
                 <div>Amount collected: <strong>{formatPeso(collected)}</strong></div>
-                <div className="col-span-2 sm:col-span-3">Balance after cleared collection: <strong>{formatPeso(Math.max(0, totalBill - clearedCollected))}</strong>{stopForm.paymentMethod === 'Check' && <span className="ml-1 text-xs text-slate-500">(check remains pending until cleared)</span>}</div>
+                <div className="sm:col-span-2 xl:col-span-3">Balance after cleared collection: <strong>{formatPeso(Math.max(0, totalBill - clearedCollected))}</strong>{stopForm.paymentMethod === 'Check' && collected > 0 && <span className="ml-1 text-xs text-slate-500">(check remains pending until cleared)</span>}</div>
               </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div><label className="mb-1 block text-xs font-semibold">Received by</label><input value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" /></div>
-                <div><label className="mb-1 block text-xs font-semibold">Payment Method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="w-full rounded border px-3 py-2 text-sm"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Check">Bank Check</option></select></div>
-                <div><label className="mb-1 block text-xs font-semibold">Amount Collected (₱)</label><input type="number" min={0} max={totalBill} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: Number(e.target.value) || 0 })} className="w-full rounded border px-3 py-2 text-sm" /></div>
-                {stopForm.paymentMethod !== 'Cash' && <div><label className="mb-1 block text-xs font-semibold">Payment Reference *</label><input value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" />{stopForm.paymentMethod === 'Check' && <div className="mt-2 grid grid-cols-2 gap-2"><input value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} placeholder="Bank name" className="w-full rounded border px-3 py-2 text-sm" /><input type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" /></div>}</div>}
-                <div className="md:col-span-2"><label className="mb-1 block text-xs font-semibold">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="w-full rounded border px-3 py-2 text-sm" placeholder="Short items and BO are excluded from the bill automatically." /></div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                <div><label className="mb-1 block text-sm font-semibold">Received by <span className="text-red-600">*</span></label><input required value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" /></div>
+                <div><label className="mb-1 block text-sm font-semibold">Payment method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option><option value="Check">Bank Check</option></select></div>
+                <div><label className="mb-1 block text-sm font-semibold">Amount collected (₱)</label><input type="number" min={0} max={totalBill} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: e.target.value === '' ? '' : Number(e.target.value) })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-describedby="payment-amount-help" /><p id="payment-amount-help" className="mt-1 text-xs text-slate-500">Enter 0 when no payment is collected.</p></div>
+                {requiresPaymentReference && <div><label className="mb-1 block text-sm font-semibold">Payment reference <span className="text-red-600">*</span></label><input required value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" />{stopForm.paymentMethod === 'Check' && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Bank name *</label><input required value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div><div><label className="mb-1 block text-xs font-semibold">Check date *</label><input required type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div></div>}</div>}
+                <div className="md:col-span-2 xl:col-span-3"><label className="mb-1 block text-sm font-semibold">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" placeholder="Optional delivery notes." /></div>
               </div>
-              <div className="flex justify-end gap-2"><button type="button" onClick={() => setStopForm(null)} className="rounded border px-4 py-2 text-sm">Cancel</button><button type="button" onClick={() => handleRecordStop(stop.id)} disabled={submitting || invalidQuantity} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{submitting ? 'Saving…' : 'Save Delivery and Payment'}</button></div>
+              {amountValid === false && stopForm.amountPaid !== '' && <p role="alert" className="text-sm text-red-700">Enter a nonnegative amount up to the total bill of {formatPeso(totalBill)}.</p>}
+              {activeForm && !String(stopForm.recipientName || '').trim() && <p className="text-sm text-amber-800">Received by is required.</p>}
+              {missingPaymentDetails && <p role="alert" className="text-sm text-amber-800">Complete the required payment reference and check details.</p>}
+              <div className="flex flex-col-reverse justify-end gap-2 border-t pt-3 sm:flex-row">
+                <button type="button" onClick={() => setStopForm(null)} disabled={submitting} className="h-11 rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
+                <button type="button" onClick={() => handleRecordStop(stop.id)} disabled={!canSave} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:text-white">
+                  {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {submitting ? 'Saving delivery…' : 'Save Delivery and Payment'}
+                </button>
+              </div>
             </div>}
           </div>;
         })}

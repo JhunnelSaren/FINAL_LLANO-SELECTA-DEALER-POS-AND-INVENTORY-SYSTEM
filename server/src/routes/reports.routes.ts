@@ -54,8 +54,9 @@ router.get('/sales', authenticateToken, async (req, res: Response) => {
       for (const item of invoice.deliveryStop?.items ?? []) {
         const key = item.productId || item.productName;
         const product = products.get(key) || { name: item.productName, sku: item.productId, qty: 0, revenue: 0 };
-        product.qty += item.acceptedQty;
-        product.revenue += item.acceptedQty * item.unitPrice;
+        const billableQty = Math.max(0, item.acceptedQty - item.boRefusedQty);
+        product.qty += billableQty;
+        product.revenue += billableQty * item.unitPrice;
         products.set(key, product);
       }
     }

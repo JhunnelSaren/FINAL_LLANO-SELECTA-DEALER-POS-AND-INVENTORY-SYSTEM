@@ -291,6 +291,7 @@ CREATE TABLE "CustomerInvoice" (
     "storeName" VARCHAR(128) NOT NULL,
     "invoiceDate" TIMESTAMP WITH TIME ZONE NOT NULL,
     "billableProductAmount" NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    "boDeductionAmount" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
     "otherCharges" NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     "approvedDiscounts" NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     "priorBalance" NUMERIC(12, 2) NOT NULL DEFAULT 0.00,

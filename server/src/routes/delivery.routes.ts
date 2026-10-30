@@ -2,8 +2,15 @@ import { Router, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import prisma from '../db.js';
 import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
+import { calculateDeliveryAmounts, validateDeliveryQuantities } from '../delivery-calculations.js';
 
 const router = Router();
+
+class DeliveryWorkflowError extends Error {
+  constructor(public statusCode: number, message: string) {
+    super(message);
+  }
+}
 
 // GET /api/delivery-runs
 router.get('/', authenticateToken, async (req, res: Response) => {
@@ -281,12 +288,16 @@ router.post('/stops/:stopId/fail', authenticateToken, async (req: AuthenticatedR
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'Enter why this store could not receive the delivery.' });
   try {
-    const stop = await prisma.deliveryStop.findUnique({ where: { id: stopId }, include: { items: true, deliveryRun: true } });
-    if (!stop) return res.status(404).json({ error: 'Delivery stop not found.' });
-    if (stop.deliveryRun.status !== 'In Transit') return res.status(409).json({ error: 'Backloads can only be recorded for a dispatched run.' });
-    if (stop.status !== 'Pending' && stop.status !== 'In Progress') return res.status(409).json({ error: `This stop has already been recorded as ${stop.status}.` });
     const now = new Date();
     const failedStop = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "DeliveryRun" WHERE "id" = (SELECT "deliveryRunId" FROM "DeliveryStop" WHERE "id" = ${stopId}) FOR UPDATE`;
+      const stop = await tx.deliveryStop.findUnique({ where: { id: stopId }, include: { items: true, deliveryRun: true } });
+      if (!stop) throw new DeliveryWorkflowError(404, 'Delivery stop not found.');
+      if (stop.deliveryRun.status !== 'In Transit') throw new DeliveryWorkflowError(409, 'Backloads can only be recorded for a dispatched run.');
+      if (stop.status !== 'Pending' && stop.status !== 'In Progress') {
+        throw new DeliveryWorkflowError(409, `This stop has already been recorded as ${stop.status}.`);
+      }
+
       for (const item of stop.items) {
         await tx.deliveryItem.update({ where: { id: item.id }, data: { acceptedQty: 0, missingQty: 0, boRefusedQty: 0, intactReturnedQty: item.loadedQty } });
       }
@@ -299,6 +310,8 @@ router.post('/stops/:stopId/fail', authenticateToken, async (req: AuthenticatedR
     await recordAudit('Delivery Failed / Backload', 'Delivery', req.user?.name || 'Staff', { stopId, reason });
     res.json({ success: true, stop: failedStop, backloadUnits: failedStop.items.reduce((sum, item) => sum + item.intactReturnedQty, 0) });
   } catch (err: any) {
+    if (err instanceof DeliveryWorkflowError) return res.status(err.statusCode).json({ error: err.message });
+    console.error('Failed to record delivery backload:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -317,70 +330,96 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
   } = req.body;
 
   try {
-    const stop = await prisma.deliveryStop.findUnique({
-      where: { id: stopId },
-      include: {
-        deliveryRun: true,
-        items: true,
-        invoice: { include: { payments: true } },
-      },
-    });
-
-    if (!stop) {
-      return res.status(404).json({ error: 'Delivery stop not found.' });
+    const recipient = typeof recipientName === 'string' ? recipientName.trim() : '';
+    if (!recipient) throw new DeliveryWorkflowError(400, 'Enter who received the delivery.');
+    if (!['Cash', 'GCash', 'Check', 'Bank Transfer'].includes(paymentMethod)) {
+      throw new DeliveryWorkflowError(400, 'Choose Cash, GCash, Bank Transfer, or Check for payment.');
     }
-    if (stop.deliveryRun.status !== 'In Transit') {
-      return res.status(409).json({ error: 'Delivery results can only be recorded for a dispatched run.' });
+    if (amountPaid === undefined || amountPaid === null || amountPaid === '') {
+      throw new DeliveryWorkflowError(400, 'Enter the amount collected. Enter 0 if no payment was collected.');
     }
-    if (stop.status !== 'Pending' && stop.status !== 'In Progress') {
-      return res.status(409).json({ error: `This stop has already been recorded as ${stop.status}.` });
+    const paid = Number(amountPaid);
+    if (!Number.isFinite(paid) || paid < 0 || Math.round(paid * 100) !== paid * 100) {
+      throw new DeliveryWorkflowError(400, 'Amount collected must be a nonnegative amount with no more than two decimal places.');
     }
-    if (!Array.isArray(deliveredLines) || deliveredLines.length !== stop.items.length) {
+    const reference = typeof paymentReference === 'string' ? paymentReference.trim() : '';
+    const bank = typeof bankName === 'string' ? bankName.trim() : '';
+    const checkDateValue = typeof checkDate === 'string' ? checkDate.trim() : '';
+    if (paid > 0 && paymentMethod !== 'Cash' && !reference) {
+      throw new DeliveryWorkflowError(400, `Enter the ${paymentMethod} payment reference.`);
+    }
+    if (paid > 0 && paymentMethod === 'Check'
+      && (!bank || !checkDateValue || !Number.isFinite(new Date(checkDateValue).getTime()))) {
+      throw new DeliveryWorkflowError(400, 'Enter the bank name and a valid check date.');
+    }
+    if (!Array.isArray(deliveredLines)) {
       return res.status(400).json({ error: 'Enter delivery results for every loaded product.' });
     }
-    const submittedItemIds = deliveredLines.map((line: any) => String(line.id || line.productId || ''));
-    if (new Set(submittedItemIds).size !== stop.items.length || stop.items.some(item => !submittedItemIds.includes(item.id) && !submittedItemIds.includes(item.productId))) {
-      return res.status(400).json({ error: 'Each loaded product must be recorded exactly once.' });
-    }
-    if (paymentMethod && !['Cash', 'GCash', 'Check', 'Bank Transfer'].includes(paymentMethod)) {
-      return res.status(400).json({ error: 'Choose Cash, GCash, or Check for payment.' });
-    }
+    const result = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "DeliveryRun" WHERE "id" = (SELECT "deliveryRunId" FROM "DeliveryStop" WHERE "id" = ${stopId}) FOR UPDATE`;
+      const stop = await tx.deliveryStop.findUnique({
+        where: { id: stopId },
+        include: { deliveryRun: true, items: true, invoice: true },
+      });
+      if (!stop) throw new DeliveryWorkflowError(404, 'Delivery stop not found.');
+      if (stop.deliveryRun.status !== 'In Transit') {
+        throw new DeliveryWorkflowError(409, 'Delivery results can only be recorded for a dispatched run.');
+      }
+      if (stop.status !== 'Pending' && stop.status !== 'In Progress') {
+        throw new DeliveryWorkflowError(409, `This stop has already been recorded as ${stop.status}.`);
+      }
+      if (stop.invoice) throw new DeliveryWorkflowError(409, 'This stop already has an invoice and cannot be recorded again.');
+      if (deliveredLines.length !== stop.items.length) {
+        throw new DeliveryWorkflowError(400, 'Enter delivery results for every loaded product.');
+      }
 
-    const customer = await prisma.customer.findUnique({ where: { id: stop.customerId } });
-    if (!customer) {
-      return res.status(404).json({ error: 'Customer not found.' });
-    }
+      await tx.$queryRaw`SELECT "id" FROM "customers" WHERE "id" = ${stop.customerId} FOR UPDATE`;
+      const customer = await tx.customer.findUnique({ where: { id: stop.customerId } });
+      if (!customer) throw new DeliveryWorkflowError(404, 'Customer not found.');
 
-    // 1. Calculate accepted, missing, BO refused
-    let billableProductAmount = 0;
-    let boDeductionAmount = 0;
-    const itemUpdates: { id: string; data: any }[] = [];
-    const boDiscrepanciesToCreate: any[] = [];
-
-    if (deliveredLines && Array.isArray(deliveredLines)) {
+      const submittedLines = new Map<string, any>();
       for (const line of deliveredLines) {
-        const existingItem = stop.items.find((it) => it.id === line.id || it.productId === line.productId);
-        if (!existingItem) return res.status(400).json({ error: 'A submitted product does not belong to this delivery stop.' });
-
-        const loaded = existingItem.loadedQty;
-        const accepted = Number(line.acceptedQty);
-        const missing = Number(line.missingQty) || 0;
-        const boRefused = Number(line.boRefusedQty) || 0;
-        if (![accepted, missing, boRefused].every(value => Number.isInteger(value) && value >= 0) || accepted + missing + boRefused > loaded) {
-          return res.status(400).json({ error: `Accepted, missing, and BO quantities must be non-negative and cannot exceed the ${loaded} loaded units of ${existingItem.productName}.` });
+        const itemId = String(line?.id || line?.productId || '');
+        if (!itemId || submittedLines.has(itemId)) {
+          throw new DeliveryWorkflowError(400, 'Each loaded product must be recorded exactly once.');
         }
-        const intactReturned = Math.max(0, loaded - (accepted + boRefused + missing));
-        const unitPrice = existingItem.unitPrice;
+        submittedLines.set(itemId, line);
+      }
 
-        // SAFEGUARD: Billable Product Amount = actual saleable accepted quantity * unit price
-        const lineBillable = accepted * unitPrice;
-        billableProductAmount += lineBillable;
-        boDeductionAmount += boRefused * unitPrice;
+      const itemUpdates: { id: string; acceptedQty: number; boRefusedQty: number; intactReturnedQty: number; notes: string | null }[] = [];
+      const boDiscrepanciesToCreate: any[] = [];
+      const amountLines: { acceptedQty: number; boRefusedQty: number; unitPrice: number }[] = [];
 
-        itemUpdates.push({ id: existingItem.id, data: { acceptedQty: accepted, missingQty: missing, boRefusedQty: boRefused, intactReturnedQty: intactReturned, notes: line.notes || null } });
+      for (const existingItem of stop.items) {
+        const line = submittedLines.get(existingItem.id) || submittedLines.get(existingItem.productId);
+        if (!line) throw new DeliveryWorkflowError(400, 'Each loaded product must be recorded exactly once.');
 
-        // Record BO Refused discrepancy
-        if (boRefused > 0) {
+        const quantities = {
+          acceptedQty: line.acceptedQty,
+          boRefusedQty: line.boRefusedQty,
+        };
+        const quantityError = validateDeliveryQuantities(existingItem.productName, existingItem.loadedQty, quantities);
+        if (quantityError) throw new DeliveryWorkflowError(400, quantityError);
+
+        const acceptedQty = quantities.acceptedQty as number;
+        const boRefusedQty = quantities.boRefusedQty as number;
+        const intactReturnedQty = existingItem.loadedQty - acceptedQty;
+        const unitPrice = Number(existingItem.unitPrice);
+        if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+          throw new DeliveryWorkflowError(400, `The catalog price for ${existingItem.productName} is invalid.`);
+        }
+
+        itemUpdates.push({
+          id: existingItem.id,
+          acceptedQty,
+          boRefusedQty,
+          intactReturnedQty,
+          notes: typeof line.notes === 'string' ? line.notes.trim() || null : null,
+        });
+        amountLines.push({ acceptedQty, boRefusedQty, unitPrice });
+
+        if (boRefusedQty > 0) {
+          const boCredit = Number((boRefusedQty * unitPrice).toFixed(2));
           boDiscrepanciesToCreate.push({
             id: `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
             customerId: customer.id,
@@ -389,108 +428,130 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
             productId: existingItem.productId,
             productName: existingItem.productName,
             category: existingItem.category || 'Unspecified',
-            quantity: boRefused,
+            quantity: boRefusedQty,
             unitPrice,
-            totalDeduction: Number((boRefused * unitPrice).toFixed(2)),
+            totalDeduction: boCredit,
             reason: `BO/melted refused by ${stop.storeName} and brought back in van`,
             reportedBy: stop.deliveryRun.collector || req.user?.name || 'Collector',
             disposition: 'Refunded',
             dispositionBy: 'SELECTA',
             dispositionAt: new Date(),
-            notes: `BO credit of ₱${(boRefused * unitPrice).toFixed(2)} is shown on the customer receipt. Refused at store stop during delivery run ${stop.deliveryRun.runNumber}`,
+            notes: `BO damaged goods deduction of ₱${boCredit.toFixed(2)} was applied to the delivery bill for run ${stop.deliveryRun.runNumber}.`,
           });
         }
       }
-    } else {
-      // Default: all loaded accepted
-      billableProductAmount = stop.items.reduce((s, it) => s + it.loadedQty * it.unitPrice, 0);
-    }
 
-    // Net Amount Due = Billable Product Amount + prior balance (no double deduction of BO!)
-    const priorBalance = customer.currentBalance || 0;
-    const netAmountDue = Number((billableProductAmount + priorBalance).toFixed(2));
-    const paid = Number(amountPaid ?? 0);
-    if (!Number.isFinite(paid) || paid < 0 || paid > netAmountDue) {
-      return res.status(400).json({ error: 'Amount paid must be between zero and the invoice amount due.' });
-    }
-    const selectedPaymentMethod = paymentMethod || 'Cash';
-    if (paid > 0 && selectedPaymentMethod !== 'Cash' && !paymentReference?.trim()) return res.status(400).json({ error: 'Enter the GCash or bank check reference number.' });
-    if (paid > 0 && selectedPaymentMethod === 'Check' && (!bankName?.trim() || !checkDate || !Number.isFinite(new Date(checkDate).getTime()))) return res.status(400).json({ error: 'Enter the bank name and date for this bank check.' });
-    if (paid > 0 && paymentReference?.trim()) {
-      const duplicatePayment = await prisma.paymentTransaction.findFirst({ where: { referenceNumber: paymentReference.trim() } });
-      if (duplicatePayment) return res.status(409).json({ error: `Payment reference "${paymentReference}" was already recorded previously.` });
-    }
-    // A bank check is recorded as received but does not reduce the customer balance until it clears.
-    const clearedPaymentAmount = selectedPaymentMethod === 'Check' ? 0 : paid;
-    const balanceRemaining = Math.max(0, Number((netAmountDue - clearedPaymentAmount).toFixed(2)));
-    const paymentStatus = balanceRemaining <= 0 ? 'Paid' : clearedPaymentAmount > 0 ? 'Partial' : 'Unpaid';
-
-    const invoiceNumber = `OR-${stop.storeName.slice(0, 3).toUpperCase()}-${Date.now().toString().slice(-4)}`;
-
-    const result = await prisma.$transaction(async tx => {
-      if (paid > 0 && paymentReference?.trim()) {
-        const duplicate = await tx.paymentTransaction.findFirst({ where: { referenceNumber: paymentReference.trim() } });
-        if (duplicate) throw new Error('DUPLICATE_PAYMENT_REFERENCE');
+      if (submittedLines.size !== stop.items.length) {
+        throw new DeliveryWorkflowError(400, 'A submitted product does not belong to this delivery stop.');
       }
+
+      const totals = calculateDeliveryAmounts(
+        amountLines,
+        Number(customer.currentBalance) || 0,
+        paymentMethod,
+        paid,
+      );
+      if (paid > totals.totalAmountDue) {
+        throw new DeliveryWorkflowError(400, 'Amount collected cannot exceed the delivery bill plus the previous balance.');
+      }
+      if (paid > 0 && reference) {
+        const duplicatePayment = await tx.paymentTransaction.findFirst({ where: { referenceNumber: reference } });
+        if (duplicatePayment) throw new DeliveryWorkflowError(409, `Payment reference "${reference}" was already recorded previously.`);
+      }
+
       for (const itemUpdate of itemUpdates) {
-        await tx.deliveryItem.update({ where: { id: itemUpdate.id }, data: itemUpdate.data });
+        await tx.deliveryItem.update({
+          where: { id: itemUpdate.id },
+          data: {
+            acceptedQty: itemUpdate.acceptedQty,
+            missingQty: 0,
+            boRefusedQty: itemUpdate.boRefusedQty,
+            intactReturnedQty: itemUpdate.intactReturnedQty,
+            notes: itemUpdate.notes,
+          },
+        });
       }
       if (boDiscrepanciesToCreate.length) await tx.boDiscrepancy.createMany({ data: boDiscrepanciesToCreate });
 
-      const invoice = await tx.customerInvoice.upsert({
-        where: { deliveryStopId: stop.id },
-        update: {
-          billableProductAmount, boDeductionAmount, priorBalance, netAmountDue, totalPaid: clearedPaymentAmount, balanceRemaining,
-          paymentStatus,
-          collectorName: stop.deliveryRun.collector, customerSignature: recipientName?.trim() || null, notes,
-        },
-        create: {
-          invoiceNumber, deliveryStopId: stop.id, customerId: stop.customerId, storeName: stop.storeName,
-          invoiceDate: new Date(), billableProductAmount, boDeductionAmount, otherCharges: 0, approvedDiscounts: 0,
-          priorBalance, netAmountDue, totalPaid: clearedPaymentAmount, balanceRemaining,
-          paymentStatus,
-          collectorName: stop.deliveryRun.collector, customerSignature: recipientName?.trim() || null, notes,
+      const invoice = await tx.customerInvoice.create({
+        data: {
+          invoiceNumber: `OR-${stop.storeName.slice(0, 3).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+          deliveryStopId: stop.id,
+          customerId: stop.customerId,
+          storeName: stop.storeName,
+          invoiceDate: new Date(),
+          billableProductAmount: totals.finalProductBill,
+          boDeductionAmount: totals.boDeductionAmount,
+          otherCharges: 0,
+          approvedDiscounts: 0,
+          priorBalance: totals.previousBalance,
+          netAmountDue: totals.totalAmountDue,
+          totalPaid: totals.clearedPaymentAmount,
+          balanceRemaining: totals.balanceRemaining,
+          paymentStatus: totals.paymentStatus,
+          collectorName: stop.deliveryRun.collector,
+          customerSignature: recipient,
+          notes: typeof notes === 'string' ? notes.trim() || null : null,
         },
       });
 
       if (paid > 0) {
         await tx.paymentTransaction.create({
           data: {
-            invoiceId: invoice.id, customerId: stop.customerId, amount: paid,
-            paymentMethod: selectedPaymentMethod, referenceNumber: paymentReference?.trim() || null,
-            bankName: bankName?.trim() || null, checkDate: checkDate ? new Date(checkDate) : null,
-            checkStatus: selectedPaymentMethod === 'Check' ? 'Pending' : 'Cleared',
+            invoiceId: invoice.id,
+            customerId: stop.customerId,
+            amount: paid,
+            paymentMethod,
+            referenceNumber: reference || null,
+            bankName: bank || null,
+            checkDate: paymentMethod === 'Check' ? new Date(checkDateValue) : null,
+            checkStatus: paymentMethod === 'Check' ? 'Pending' : 'Cleared',
             collectedBy: stop.deliveryRun.collector || req.user?.name || 'Collector',
             notes: `Collected during delivery stop at ${stop.storeName}`,
           },
         });
       }
-      await tx.customer.update({ where: { id: stop.customerId }, data: { currentBalance: balanceRemaining } });
+
+      await tx.customer.update({
+        where: { id: stop.customerId },
+        data: { currentBalance: totals.balanceRemaining },
+      });
       const updatedStop = await tx.deliveryStop.update({
         where: { id: stop.id },
-        data: { status: 'Delivered', recipientName: recipientName?.trim() || null, deliveredAt: new Date(), notes },
+        data: {
+          status: 'Delivered',
+          recipientName: recipient,
+          deliveredAt: new Date(),
+          notes: typeof notes === 'string' ? notes.trim() || null : null,
+        },
         include: { items: true, invoice: { include: { payments: true } } },
       });
-      const remainingStops = await tx.deliveryStop.count({ where: { deliveryRunId: stop.deliveryRunId, status: { in: ['Pending', 'In Progress'] } } });
-      if (remainingStops === 0) await tx.deliveryRun.update({ where: { id: stop.deliveryRunId }, data: { status: 'Delivered', completedAt: new Date() } });
-      return { invoice, updatedStop };
+      const remainingStops = await tx.deliveryStop.count({
+        where: { deliveryRunId: stop.deliveryRunId, status: { in: ['Pending', 'In Progress'] } },
+      });
+      if (remainingStops === 0) {
+        await tx.deliveryRun.update({ where: { id: stop.deliveryRunId }, data: { status: 'Delivered', completedAt: new Date() } });
+      }
+
+      return { invoice, updatedStop, totals };
     });
 
     await recordAudit('Deliver Stop', 'Delivery', req.user?.name || 'Collector', {
-      stopId: stop.id,
-      store: stop.storeName,
-      netAmountDue,
-      amountPaid: paid,
-      balanceRemaining,
+      stopId,
+      netAmountDue: result.totals.totalAmountDue,
+      amountPaid: result.totals.amountCollected,
+      balanceRemaining: result.totals.balanceRemaining,
     });
 
     res.json({
       success: true,
       stop: result.updatedStop,
       invoice: result.invoice,
+      totals: result.totals,
     });
   } catch (err: any) {
-    if (err.message === 'DUPLICATE_PAYMENT_REFERENCE') return res.status(409).json({ error: `Payment reference "${paymentReference}" was already recorded previously.` });
+    if (err instanceof DeliveryWorkflowError) return res.status(err.statusCode).json({ error: err.message });
+    console.error('Failed to record delivery and payment:', err);
     res.status(500).json({ error: err.message });
   }
 });
