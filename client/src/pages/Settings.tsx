@@ -49,20 +49,20 @@ type LoginPageConfig = {
 const defaultLoginPage: LoginPageConfig = {
   brandName: 'Llano Selecta',
   welcomeTitle: 'Welcome Back to Llano Selecta',
-  welcomeSubtitle: 'Sign in your account',
+  welcomeSubtitle: 'Sign in to continue to your dealer dashboard',
   logoUrl: '/llano-selecta-logo.png',
   logoIcon: 'home',
-  emailLabel: 'Your Email',
-  emailPlaceholder: 'Enter your email id here',
+  emailLabel: 'Username or Email',
+  emailPlaceholder: 'Enter your username or email',
   passwordLabel: 'Password',
   passwordPlaceholder: 'Enter your password here',
   loginButtonText: 'Login',
   rememberMeText: 'Remember me',
   forgotPasswordText: 'Forgot Password?',
-  badgeHeadline: 'Because Stays Should Feel Like Destinations',
-  badgeDescription: 'Find a perfect stay for you much awaited vacation!',
+  badgeHeadline: 'Cold Chain. Reliable Delivery.',
+  badgeDescription: 'Manage inventory, orders, routes, and freezer assets in one place.',
   themeStyle: 'modern-glass',
-  showSocialButtons: true,
+  showSocialButtons: false,
   socialGoogleText: 'Continue with Google',
   socialAppleText: 'Continue with Apple',
   footerText: "Don't have an account?",
@@ -71,18 +71,18 @@ const defaultLoginPage: LoginPageConfig = {
   slides: [
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
-      headline: 'Because Stays Should Feel Like Destinations',
-      description: 'Find a perfect stay for you much awaited vacation!',
+      headline: 'Cold Chain. Reliable Delivery.',
+      description: 'Manage inventory, orders, routes, and freezer assets in one place.',
     },
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
       headline: 'Llano Selecta Dealer & Cold Chain',
-      description: 'Fast, reliable ice cream distribution across Valencia, Cabanglasan & San Fernando.',
+      description: 'Reliable cold-chain ice cream distribution across Valencia, Cabanglasan, and San Fernando.',
     },
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
       headline: 'Flawless Real-Time Inventory & Freezers',
-      description: 'Complete stock traceability, instant invoices, and route reconciliation.',
+      description: 'Track stock, route deliveries, invoices, and freezer assets from one dashboard.',
     },
   ],
 };
@@ -760,7 +760,7 @@ export default function Settings() {
                       onChange={(e) => setLoginPage({ ...loginPage, showSocialButtons: e.target.checked })}
                       className="rounded text-rose-600 focus:ring-rose-500"
                     />
-                    <span className="font-semibold">Show Google &amp; Apple Action Buttons</span>
+                    <span className="font-semibold">Show quick demo access button</span>
                   </label>
                 </div>
               </div>

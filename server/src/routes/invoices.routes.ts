@@ -1,11 +1,11 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
-import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
+import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 
 const router = Router();
 
 // GET /api/invoices
-router.get('/', authenticateToken, async (req, res: Response) => {
+router.get('/', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const { paymentStatus, customerId, search, dateFrom, dateTo } = req.query;
   try {
     const where: any = {};
@@ -59,7 +59,7 @@ router.get('/', authenticateToken, async (req, res: Response) => {
 });
 
 // GET /api/invoices/:id
-router.get('/:id', authenticateToken, async (req, res: Response) => {
+router.get('/:id', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const { id } = req.params;
   try {
     const invoice = await prisma.customerInvoice.findUnique({
@@ -91,7 +91,7 @@ router.get('/:id', authenticateToken, async (req, res: Response) => {
 });
 
 // POST /api/invoices/:id/payments
-router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/payments', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { amount, paymentMethod, referenceNumber, bankName, checkDate, checkStatus, notes } = req.body;
   try {
@@ -108,7 +108,7 @@ router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest
     if (!Number.isFinite(payAmount) || payAmount <= 0) {
       return res.status(400).json({ error: 'Payment amount must be greater than zero.' });
     }
-    if (payAmount > invoice.balanceRemaining) return res.status(400).json({ error: 'Payment amount cannot exceed the remaining invoice balance.' });
+    if (payAmount > Number(invoice.balanceRemaining)) return res.status(400).json({ error: 'Payment amount cannot exceed the remaining invoice balance.' });
     if (!['Cash', 'GCash', 'Check', 'Bank Transfer'].includes(paymentMethod)) {
       return res.status(400).json({ error: 'Choose Cash, GCash, or Check as the payment method.' });
     }
@@ -133,7 +133,7 @@ router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest
     const { payment, updatedInvoice } = await prisma.$transaction(async tx => {
       const currentInvoice = await tx.customerInvoice.findUnique({ where: { id }, include: { payments: true } });
       if (!currentInvoice) throw new Error('INVOICE_NOT_FOUND');
-      if (payAmount > currentInvoice.balanceRemaining) throw new Error('PAYMENT_EXCEEDS_BALANCE');
+      if (payAmount > Number(currentInvoice.balanceRemaining)) throw new Error('PAYMENT_EXCEEDS_BALANCE');
       if (referenceNumber?.trim()) {
         const duplicateReference = await tx.paymentTransaction.findFirst({ where: { referenceNumber: referenceNumber.trim() } });
         if (duplicateReference) throw new Error('DUPLICATE_PAYMENT_REFERENCE');
@@ -152,18 +152,18 @@ router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest
           notes: notes || null,
         },
       });
-      const oldRecordedTotal = currentInvoice.payments.reduce((sum, row) => sum + row.amount, 0);
-      const oldClearedTotal = currentInvoice.payments.reduce((sum, row) => sum + ((row.paymentMethod !== 'Check' || row.checkStatus === 'Cleared') ? row.amount : 0), 0);
-      const unrecordedPaid = Math.max(0, currentInvoice.totalPaid - oldRecordedTotal);
+      const oldRecordedTotal = currentInvoice.payments.reduce((sum, row) => sum + Number(row.amount), 0);
+      const oldClearedTotal = currentInvoice.payments.reduce((sum, row) => sum + ((row.paymentMethod !== 'Check' || row.checkStatus === 'Cleared') ? Number(row.amount) : 0), 0);
+      const unrecordedPaid = Math.max(0, Number(currentInvoice.totalPaid) - oldRecordedTotal);
       const newTotalPaid = Number((unrecordedPaid + oldClearedTotal + (paymentStatus === 'Cleared' ? payAmount : 0)).toFixed(2));
-      const balance = Math.max(0, Number((currentInvoice.netAmountDue - newTotalPaid).toFixed(2)));
+      const balance = Math.max(0, Number((Number(currentInvoice.netAmountDue) - newTotalPaid).toFixed(2)));
       const updated = await tx.customerInvoice.update({
         where: { id },
         data: { totalPaid: newTotalPaid, balanceRemaining: balance, paymentStatus: balance <= 0 ? 'Paid' : newTotalPaid > 0 ? 'Partial' : 'Unpaid' },
         include: { payments: true },
       });
       const customer = await tx.customer.findUnique({ where: { id: currentInvoice.customerId }, select: { currentBalance: true } });
-      if (customer) await tx.customer.update({ where: { id: currentInvoice.customerId }, data: { currentBalance: Math.max(0, Number((customer.currentBalance - (newTotalPaid - currentInvoice.totalPaid)).toFixed(2))) } });
+      if (customer) await tx.customer.update({ where: { id: currentInvoice.customerId }, data: { currentBalance: Math.max(0, Number((Number(customer.currentBalance) - (newTotalPaid - Number(currentInvoice.totalPaid))).toFixed(2))) } });
       return { payment: createdPayment, updatedInvoice: updated };
     });
 
@@ -183,7 +183,7 @@ router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest
 });
 
 // PUT /api/invoices/payments/:payId/check-status (Update check clearing status)
-router.put('/payments/:payId/check-status', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/payments/:payId/check-status', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { payId } = req.params;
   const { checkStatus } = req.body;
   try {
@@ -203,14 +203,14 @@ router.put('/payments/:payId/check-status', authenticateToken, async (req: Authe
     const updated = await prisma.$transaction(async tx => {
       const changed = await tx.paymentTransaction.update({ where: { id: payId }, data: { checkStatus } });
       const payments = await tx.paymentTransaction.findMany({ where: { invoiceId: payment.invoice.id } });
-      const recordedTotal = payments.reduce((sum, row) => sum + row.amount, 0);
-      const clearedTotal = payments.reduce((sum, row) => sum + ((row.paymentMethod !== 'Check' || row.checkStatus === 'Cleared') ? row.amount : 0), 0);
-      const unrecordedPaid = Math.max(0, payment.invoice.totalPaid - recordedTotal);
+      const recordedTotal = payments.reduce((sum, row) => sum + Number(row.amount), 0);
+      const clearedTotal = payments.reduce((sum, row) => sum + ((row.paymentMethod !== 'Check' || row.checkStatus === 'Cleared') ? Number(row.amount) : 0), 0);
+      const unrecordedPaid = Math.max(0, Number(payment.invoice.totalPaid) - recordedTotal);
       const totalPaid = Number((unrecordedPaid + clearedTotal).toFixed(2));
-      const balance = Math.max(0, Number((payment.invoice.netAmountDue - totalPaid).toFixed(2)));
+      const balance = Math.max(0, Number((Number(payment.invoice.netAmountDue) - totalPaid).toFixed(2)));
       await tx.customerInvoice.update({ where: { id: payment.invoice.id }, data: { totalPaid, balanceRemaining: balance, paymentStatus: balance <= 0 ? 'Paid' : totalPaid > 0 ? 'Partial' : 'Unpaid' } });
       const customer = await tx.customer.findUnique({ where: { id: payment.customerId }, select: { currentBalance: true } });
-      if (customer) await tx.customer.update({ where: { id: payment.customerId }, data: { currentBalance: Math.max(0, Number((customer.currentBalance - (totalPaid - payment.invoice.totalPaid)).toFixed(2))) } });
+      if (customer) await tx.customer.update({ where: { id: payment.customerId }, data: { currentBalance: Math.max(0, Number((Number(customer.currentBalance) - (totalPaid - Number(payment.invoice.totalPaid))).toFixed(2))) } });
       return changed;
     });
 

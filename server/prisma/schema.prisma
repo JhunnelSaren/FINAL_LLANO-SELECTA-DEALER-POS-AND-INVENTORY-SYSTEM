@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -14,14 +14,16 @@ model User {
   name         String
   email        String    @unique
   role         String // "Admin" | "Staff"
-  accessKey    String    @unique @map("access_key")
-  passwordHash String    @map("password_hash")
+  accessKey    String?   @unique
+  passwordHash String
   phone        String?
   status       String    @default("Active") // "Active" | "Inactive"
-  lastLogin    DateTime? @map("last_login")
-  createdAt    DateTime  @default(now()) @map("created_at")
+  permissions  String?   @db.Text
+  lastLogin    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  @@map("users")
+  @@map("user")
 }
 
 model Product {
@@ -31,53 +33,49 @@ model Product {
   category        String // "CORNETTO", "MAGNUM", "STICKS", "SUPREME 1.3L"
   flavor          String?
   unit            String   @default("Piece") // "Piece", "Pack", "Tub"
-  dealerPrice     Decimal? @default(0.0) @map("dealer_price") @db.Decimal(10, 2)
-  sellingPrice    Decimal  @default(0.0) @map("unit_price") @db.Decimal(10, 2)
-  srp             Decimal? @default(0.0) @db.Decimal(10, 2)
+  dealerPrice     Decimal? @default(0.0) @db.Decimal(12, 2)
+  sellingPrice    Decimal  @default(0.0) @db.Decimal(12, 2)
+  srp             Decimal? @default(0.0) @db.Decimal(12, 2)
   stock           Int      @default(0) // Saleable physical inventory
   quarantineStock Int      @default(0) // Damaged/BO/quarantined inventory
   reservedStock   Int      @default(0) // Allocated/picked for delivery
-  minStock        Int      @default(15) @map("min_stock") // Safety re-order threshold
+  minStock        Int      @default(15) // Safety re-order threshold
   barcode         String?
   isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  @@map("products")
+  @@map("product")
 }
 
 model Customer {
   id                   String         @id // e.g. "CUST-001"
-  storeName            String         @map("store_name")
-  ownerName            String?        @map("owner_name")
-  owner                String?
+  storeName            String
+  ownerName            String?
   contact              String?
   area                 String // "Valencia", "Cabanglasan", "San Fernando"
-  subArea              String?        @map("sub_area") // "Batangan", "San Isidro", "Poblacion", "Halapitan", etc.
+  subArea              String?        // "Batangan", "San Isidro", "Poblacion", "Halapitan", etc.
   purok                String?
   route                String?
-  address              String?
-  freezerSerial        String?        @map("freezer_serial")
-  barcodeNo            String?        @map("barcode_no")
+  address              String? @db.Text
+  freezerSerial        String?
+  barcodeNo            String?
   status               String         @default("Active") // "Active" | "Inactive"
-  notes                String?
-  currentBalance       Float          @default(0.0) @map("current_balance") // Outstanding unpaid customer balance
-  deploymentPaperRef   String?        @map("deployment_paper_ref")
-  deploymentPaperPhoto String?        @map("deployment_paper_photo")
-  dateAdded            DateTime       @default(now()) @map("date_joined") @db.Date
-  lastOrderAt          DateTime?      @map("last_order_at")
-  storePhotoPath       String?        @map("store_photo_path")
-  createdAt            DateTime       @default(now()) @map("created_at")
+  notes                String? @db.Text
+  currentBalance       Decimal        @default(0.0) @db.Decimal(12, 2) // Outstanding unpaid customer balance
+  dateAdded            DateTime       @default(now()) @map("createdAt")
+  lastOrderAt          DateTime?
+  storePhotoPath       String? @db.Text
   updatedAt            DateTime       @updatedAt
   bookings             Booking[]
   freezers             Freezer[]
   deliveryStops        DeliveryStop[]
 
-  @@map("customers")
+  @@map("customer")
 }
 
 model Freezer {
-  id                String                @id // e.g. "FRZ-001"
+  id                String                @id @db.VarChar(64) // e.g. "FRZ-001"
   serialNumber      String                @unique // e.g. "SEL-FRZ-8821"
   barcode           String                @unique // e.g. "BC-8821-VAL"
   model             String // e.g. "Selecta Glass Top 300L"
@@ -87,15 +85,15 @@ model Freezer {
   area              String                @default("Valencia")
   status            String                @default("Active") // "Active", "Under Maintenance", "Returned", "Unassigned"
   custodyDate       DateTime?
-  totalFee          Float                 @default(10000.00)
-  productAllocation Float                 @default(9000.00)
-  processingFee     Float                 @default(1000.00)
+  totalFee          Decimal               @default(10000.00) @db.Decimal(12, 2)
+  productAllocation Decimal               @default(9000.00) @db.Decimal(12, 2)
+  processingFee     Decimal               @default(1000.00) @db.Decimal(12, 2)
   feePaymentStatus  String                @default("Paid") // "Paid", "Partial", "Unpaid"
   feePaymentRef     String?
   condition         String                @default("Good")
   lastVerifiedAt    DateTime?
   nextDueAt         DateTime?
-  notes             String?
+  notes             String? @db.Text
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
   customer          Customer?             @relation(fields: [assignedStoreId], references: [id])
@@ -104,35 +102,34 @@ model Freezer {
 }
 
 model FreezerTransaction {
-  id              String   @id @default(cuid())
-  freezerId       String   @map("freezer_id")
+  id              String   @id @default(cuid()) @db.VarChar(64)
+  freezerId       String   @db.VarChar(64)
   action          String
-  fromCustomerId  String?  @map("from_customer_id")
-  fromStoreName   String?  @map("from_store_name")
-  fromArea        String?  @map("from_area")
-  toCustomerId    String?  @map("to_customer_id")
-  toStoreName     String?  @map("to_store_name")
-  toArea          String?  @map("to_area")
-  reason          String
-  performedBy     String   @map("performed_by")
-  createdAt       DateTime @default(now()) @map("created_at")
+  fromCustomerId  String?
+  fromStoreName   String?
+  fromArea        String?
+  toCustomerId    String?
+  toStoreName     String?
+  toArea          String?
+  reason          String @db.Text
+  performedBy     String
+  createdAt       DateTime @default(now())
   freezer         Freezer  @relation(fields: [freezerId], references: [id], onDelete: Restrict)
 
   @@index([freezerId, createdAt])
-  @@map("freezer_transactions")
 }
 
 model FreezerVerification {
   id                String   @id @default(cuid())
-  freezerId         String
+  freezerId         String   @db.VarChar(64)
   verificationMonth String // "YYYY-MM" e.g. "2026-10"
   scannedAt         DateTime
   barcodeScanned    String
   staffName         String
-  photoPath         String?
-  photoUrl          String?
+  photoPath         String? @db.Text
+  photoUrl          String? @db.Text
   status            String   @default("Verified") // "Verified", "Rejected", "Pending Review"
-  notes             String?
+  notes             String? @db.Text
   verifiedBy        String?
   createdAt         DateTime @default(now())
   freezer           Freezer  @relation(fields: [freezerId], references: [id])
@@ -149,8 +146,8 @@ model Booking {
   requestedDeliveryDate DateTime?
   bookerName            String
   status                String        @default("Booked") // "Booked", "Ordered to Bodega", "Prepared", "In Transit", "Delivered", "Cancelled"
-  subtotal              Float         @default(0.0)
-  notes                 String?
+  subtotal              Decimal       @default(0.0) @db.Decimal(12, 2)
+  notes                 String? @db.Text
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
   customer              Customer      @relation(fields: [customerId], references: [id])
@@ -163,9 +160,9 @@ model BookingItem {
   productId   String
   productName String
   category    String
-  unitPrice   Float
+  unitPrice   Decimal @db.Decimal(12, 2)
   quantity    Int
-  lineTotal   Float
+  lineTotal   Decimal @db.Decimal(12, 2)
   booking     Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 }
 
@@ -178,8 +175,8 @@ model BodegaOrder {
   staffResponsible    String
   status              String            @default("Entered in POS") // "Pending Entry", "Entered in POS", "Partially Received", "Received", "Cancelled"
   totalItemsNeeded    Int               @default(0)
-  totalAmount         Float             @default(0.0)
-  notes               String?
+  totalAmount         Decimal           @default(0.0) @db.Decimal(12, 2)
+  notes               String? @db.Text
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
   items               BodegaOrderItem[]
@@ -192,7 +189,7 @@ model BodegaOrderItem {
   productName   String
   orderedQty    Int
   receivedQty   Int         @default(0)
-  unitPrice     Float
+  unitPrice     Decimal      @db.Decimal(12, 2)
   bodegaOrder   BodegaOrder @relation(fields: [bodegaOrderId], references: [id], onDelete: Cascade)
 }
 
@@ -206,9 +203,9 @@ model StockReceiving {
   checkerName        String
   arrivalDate        DateTime
   status             String               @default("Completed") // "Completed", "Discrepancy Found"
-  totalReceivedValue Float                @default(0.0)
-  receiptPhotoPath   String?
-  remarks            String?
+  totalReceivedValue Decimal              @default(0.0) @db.Decimal(12, 2)
+  receiptPhotoPath   String? @db.Text
+  remarks            String? @db.Text
   createdAt          DateTime             @default(now())
   items              StockReceivingItem[]
 }
@@ -223,8 +220,8 @@ model StockReceivingItem {
   receivedGoodQty  Int // Enters saleable stock
   damagedMeltedQty Int            @default(0) // Enters non-saleable quarantine
   missingQty       Int            @default(0) // Shortage from supplier truck
-  unitPrice        Float
-  notes            String?
+  unitPrice        Decimal        @db.Decimal(12, 2)
+  notes            String? @db.Text
   receiving        StockReceiving @relation(fields: [receivingId], references: [id], onDelete: Cascade)
 }
 
@@ -244,7 +241,7 @@ model DeliveryRun {
   dispatchedAt   DateTime?
   completedAt    DateTime?
   reconciledAt   DateTime?
-  notes          String?
+  notes          String? @db.Text
   createdAt      DateTime             @default(now())
   stops          DeliveryStop[]
   reconciliation RouteReconciliation?
@@ -260,7 +257,7 @@ model DeliveryStop {
   status        String           @default("Pending") // "Pending", "In Progress", "Delivered", "Rescheduled", "Failed"
   recipientName String?
   deliveredAt   DateTime?
-  notes         String?
+  notes         String? @db.Text
   deliveryRun   DeliveryRun      @relation(fields: [deliveryRunId], references: [id], onDelete: Cascade)
   customer      Customer         @relation(fields: [customerId], references: [id])
   items         DeliveryItem[]
@@ -279,8 +276,8 @@ model DeliveryItem {
   missingQty        Int          @default(0) // Not delivered / short
   boRefusedQty      Int          @default(0) // Melted/damaged refused and returned
   intactReturnedQty Int          @default(0) // Undelivered intact units returned
-  unitPrice         Float
-  notes             String?
+  unitPrice         Decimal      @db.Decimal(12, 2)
+  notes             String? @db.Text
   deliveryStop      DeliveryStop @relation(fields: [deliveryStopId], references: [id], onDelete: Cascade)
 }
 
@@ -291,18 +288,21 @@ model CustomerInvoice {
   customerId            String
   storeName             String
   invoiceDate           DateTime
-  billableProductAmount Float // Accepted Qty * Unit Price
-  boDeductionAmount     Float                @default(0.0)
-  otherCharges          Float                @default(0.0)
-  approvedDiscounts     Float                @default(0.0)
-  priorBalance          Float                @default(0.0)
-  netAmountDue          Float // Billable + other - discount + priorBalance
-  totalPaid             Float                @default(0.0)
-  balanceRemaining      Float                @default(0.0)
+  grossDeliveryAmount   Decimal            @default(0.0) @db.Decimal(12, 2)
+  billableProductAmount Decimal @db.Decimal(12, 2) // Accepted Qty * Unit Price
+  boDeductionAmount     Decimal            @default(0.0) @db.Decimal(12, 2)
+  shortDeductionAmount  Decimal            @default(0.0) @db.Decimal(12, 2)
+  intactReturnDeductionAmount Decimal       @default(0.0) @db.Decimal(12, 2)
+  otherCharges          Decimal            @default(0.0) @db.Decimal(12, 2)
+  approvedDiscounts     Decimal            @default(0.0) @db.Decimal(12, 2)
+  priorBalance          Decimal            @default(0.0) @db.Decimal(12, 2)
+  netAmountDue          Decimal @db.Decimal(12, 2) // Billable + other - discount + priorBalance
+  totalPaid             Decimal            @default(0.0) @db.Decimal(12, 2)
+  balanceRemaining      Decimal            @default(0.0) @db.Decimal(12, 2)
   paymentStatus         String               @default("Unpaid") // "Paid", "Partial", "Unpaid"
   collectorName         String?
-  customerSignature     String?
-  notes                 String?
+  customerSignature     String? @db.Text
+  notes                 String? @db.Text
   createdAt             DateTime             @default(now())
   deliveryStop          DeliveryStop         @relation(fields: [deliveryStopId], references: [id], onDelete: Cascade)
   payments              PaymentTransaction[]
@@ -312,7 +312,7 @@ model PaymentTransaction {
   id              String          @id @default(cuid())
   invoiceId       String
   customerId      String
-  amount          Float
+  amount          Decimal         @db.Decimal(12, 2)
   paymentMethod   String // "Cash", "GCash", "Bank Transfer", "Check"
   referenceNumber String?
   bankName        String?
@@ -320,7 +320,7 @@ model PaymentTransaction {
   checkStatus     String? // "Pending", "Cleared", "Bounced"
   collectedBy     String
   recordedAt      DateTime        @default(now())
-  notes           String?
+  notes           String? @db.Text
   invoice         CustomerInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
@@ -333,14 +333,14 @@ model RouteReconciliation {
   totalIntactReturned     Int
   totalBoReturned         Int
   totalMissingUnaccounted Int
-  expectedCash            Float
-  actualCashCounted       Float
-  cashVariance            Float // actual - expected (negative = shortage)
-  totalGcash              Float       @default(0.0)
-  totalBankTransfer       Float       @default(0.0)
-  totalChecks             Float       @default(0.0)
-  totalClearedFunds       Float       @default(0.0)
-  outstandingCredit       Float       @default(0.0)
+  expectedCash            Decimal     @db.Decimal(12, 2)
+  actualCashCounted       Decimal     @db.Decimal(12, 2)
+  cashVariance            Decimal     @db.Decimal(12, 2) // actual - expected (negative = shortage)
+  totalGcash              Decimal     @default(0.0) @db.Decimal(12, 2)
+  totalBankTransfer       Decimal     @default(0.0) @db.Decimal(12, 2)
+  totalChecks             Decimal     @default(0.0) @db.Decimal(12, 2)
+  totalClearedFunds       Decimal     @default(0.0) @db.Decimal(12, 2)
+  outstandingCredit       Decimal     @default(0.0) @db.Decimal(12, 2)
   discrepancyReason       String?
   status                  String      @default("Pending Approval") // "Pending Approval", "Approved", "Exception Closed"
   approvedBy              String?
@@ -349,21 +349,35 @@ model RouteReconciliation {
   deliveryRun             DeliveryRun @relation(fields: [deliveryRunId], references: [id], onDelete: Cascade)
 }
 
+model UserNotificationState {
+  id             String   @id @default(cuid()) @db.VarChar(64)
+  userId         String   @db.VarChar(64)
+  notificationId String   @db.VarChar(120)
+  isRead         Boolean  @default(false)
+  isDeleted      Boolean  @default(false)
+  createdAt      DateTime @default(now()) @db.DateTime(3)
+  updatedAt      DateTime @updatedAt @db.DateTime(3)
+
+  @@unique([userId, notificationId])
+  @@index([userId, isDeleted])
+  @@map("usernotificationstate")
+}
+
 model InventoryLedger {
   id                String   @id @default(cuid())
-  productId         String?  @map("product_id")
-  productName       String   @map("product_name")
+  productId         String?
+  productName       String
   category          String?
-  movementType      String   @map("type") // "Supplier Receiving", "Picking", "Dispatch", "Sale Delivered", "Intact Return", "BO Quarantine", "BO Disposition", "Physical Adjustment"
-  changeQty         Int      @map("change_qty") // + or -
-  runningSaleable   Int      @default(100) @map("running_on_hand")
+  movementType      String   // "Supplier Receiving", "Picking", "Dispatch", "Sale Delivered", "Intact Return", "BO Quarantine", "BO Disposition", "Physical Adjustment"
+  changeQty         Int      // + or -
+  runningSaleable   Int      @default(100)
   runningQuarantine Int      @default(0)
-  reference         String?  @map("reference_no") // Reference ID (PO, Run, Invoice, Adj)
-  staffName         String?  @map("staff")
-  notes             String?
-  createdAt         DateTime @default(now()) @map("timestamp")
+  reference         String?  // Reference ID (PO, Run, Invoice, Adj)
+  staffName         String?
+  notes             String? @db.Text
+  createdAt         DateTime @default(now())
 
-  @@map("inventory_ledger")
+  @@map("inventoryledger")
 }
 
 model BoDiscrepancy {
@@ -375,23 +389,23 @@ model BoDiscrepancy {
   productName    String
   category       String?
   quantity       Int
-  unitPrice      Float
-  totalDeduction Float
-  reason         String
+  unitPrice      Decimal @db.Decimal(12, 2)
+  totalDeduction Decimal @db.Decimal(12, 2)
+  reason         String @db.VarChar(255)
   reportedBy     String
   disposition    String    @default("Pending") // "Pending" | "Refunded"
   dispositionBy  String?
   dispositionAt  DateTime?
-  notes          String?
+  notes          String? @db.Text
   createdAt      DateTime  @default(now())
 }
 
 model SelectaPosQuota {
   id            String                 @id @default(cuid())
   monthYear     String                 @unique // e.g. "2026-10"
-  targetAmount  Float                  @default(1000000.00)
-  recordedSales Float                  @default(0.0) // Confirmed Selecta POS external sales entries
-  notes         String?
+  targetAmount  Decimal                @default(1000000.00) @db.Decimal(12, 2)
+  recordedSales Decimal                @default(0.0) @db.Decimal(12, 2) // Confirmed Selecta POS external sales entries
+  notes         String? @db.Text
   updatedAt     DateTime               @updatedAt
   entries       SelectaPosQuotaEntry[]
 }
@@ -401,9 +415,9 @@ model SelectaPosQuotaEntry {
   quotaId       String
   entryDate     DateTime
   selectaPosRef String // e.g. "POS-CDO-7719", "Z-Read 10/24"
-  amount        Float
+  amount        Decimal         @db.Decimal(12, 2)
   enteredBy     String
-  remarks       String?
+  remarks       String? @db.Text
   createdAt     DateTime        @default(now())
   quota         SelectaPosQuota @relation(fields: [quotaId], references: [id], onDelete: Cascade)
 }
@@ -413,26 +427,26 @@ model AuditLog {
   action    String
   module    String
   user      String
-  details   String // JSON string
+  details   String @db.Text // JSON string
   timestamp DateTime @default(now())
 }
 
 model SystemSetting {
   id                       String   @id @default("SYSTEM_SETTINGS")
   dealerName               String   @default("Llano Selecta Dealer")
-  address                  String   @default("Sayre Highway, Valencia City, Bukidnon")
+  address                  String @db.Text   @default("Sayre Highway, Valencia City, Bukidnon")
   contactNumber            String   @default("0917-123-4567")
   receiptHeader            String   @default("Llano Selecta Authorized Dealer - Cold Chain Ice Cream Distribution")
-  defaultQuotaTarget       Float    @default(1000000.00)
-  freezerTotalFee          Float    @default(10000.00)
-  freezerProductAllocation Float    @default(9000.00)
-  freezerProcessingFee     Float    @default(1000.00)
+  defaultQuotaTarget       Decimal  @default(1000000.00) @db.Decimal(12, 2)
+  freezerTotalFee          Decimal  @default(10000.00) @db.Decimal(12, 2)
+  freezerProductAllocation Decimal  @default(9000.00) @db.Decimal(12, 2)
+  freezerProcessingFee     Decimal  @default(1000.00) @db.Decimal(12, 2)
   mondayRoute              String   @default("Valencia – San Fernando Route")
   tuesdayRoute             String   @default("Cabanglasan Delivery Route")
   wednesdayActivity        String   @default("Selecta Bodega Stock Arrival & Verification")
   thursdayRoute            String   @default("Cabanglasan Bongo Delivery Run")
   fridayRoute              String   @default("Valencia – San Fernando Bongo Delivery Run")
   allowNegativeStock       Boolean  @default(false)
-  loginPageConfig          String   @default("{}")
+  loginPageConfig          String? @db.Text
   updatedAt                DateTime @updatedAt
 }

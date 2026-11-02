@@ -6,18 +6,20 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
-  login: (usernameOrEmail: string, password: string) => Promise<void>;
+  login: (usernameOrEmail: string, password: string, rememberMe?: boolean) => Promise<void>;
   logout: () => void;
   isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getStoredUser(): User | null {
+  const saved = localStorage.getItem('llano_user') || sessionStorage.getItem('llano_user');
+  try { return saved ? JSON.parse(saved) : null; } catch { return null; }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('llano_user');
-    try { return saved ? JSON.parse(saved) : null; } catch { return null; }
-  });
+  const [user, setUser] = useState<User | null>(() => getStoredUser());
   const [token, setToken] = useState<string | null>(() => getAuthToken());
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -28,12 +30,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const freshUser = await apiRequest<User>('/auth/me');
           setUser(freshUser);
-          localStorage.setItem('llano_user', JSON.stringify(freshUser));
+          const storage = localStorage.getItem('llano_token') || localStorage.getItem('token')
+            ? localStorage
+            : sessionStorage;
+          storage.setItem('llano_user', JSON.stringify(freshUser));
         } catch {
           // A network outage should not discard the cached session. A rejected
           // token is handled separately by the session-expired event.
-          const cached = localStorage.getItem('llano_user');
-          try { if (cached) setUser(JSON.parse(cached)); } catch { setUser(null); }
+          setUser(getStoredUser());
         }
       }
       setIsLoading(false);
@@ -47,7 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => window.removeEventListener('llano:session-expired', handleExpired);
   }, []);
 
-  const login = async (usernameOrEmail: string, password: string) => {
+  const login = async (usernameOrEmail: string, password: string, rememberMe = true) => {
     const res = await apiRequest<{ success: boolean; token: string; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ usernameOrEmail, password }),
@@ -55,9 +59,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setToken(res.token);
     setUser(res.user);
-    localStorage.setItem('llano_token', res.token);
-    localStorage.setItem('token', res.token);
-    localStorage.setItem('llano_user', JSON.stringify(res.user));
+    localStorage.removeItem('llano_token');
+    localStorage.removeItem('token');
+    localStorage.removeItem('llano_user');
+    sessionStorage.removeItem('llano_token');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('llano_user');
+    const storage = rememberMe ? localStorage : sessionStorage;
+    storage.setItem('llano_token', res.token);
+    storage.setItem('token', res.token);
+    storage.setItem('llano_user', JSON.stringify(res.user));
   };
 
   const logout = () => {
@@ -66,6 +77,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('llano_token');
     localStorage.removeItem('token');
     localStorage.removeItem('llano_user');
+    sessionStorage.removeItem('llano_token');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('llano_user');
   };
 
   const isAdmin = user?.role === 'Admin';

@@ -1,0 +1,170 @@
+{
+  "input": "D:\\JHUNNEL SAREN\\ACLC COLLEGE\\CAPSTONE_TEMPLATE.docx",
+  "fonts_by_char_count": {
+    "Arial": 19108
+  },
+  "direct_run_formatting_runs": 365,
+  "direct_paragraph_formatting_paragraphs": 336,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 5,
+      "text": "ACLC COLLEGE OF BUKIDNON CAMPUS",
+      "style": "Normal"
+    },
+    {
+      "para_index": 12,
+      "text": "\u201cYOUR TITLE\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 16,
+      "text": "ACLC College of Bukidnon CAMPUS",
+      "style": "Normal"
+    },
+    {
+      "para_index": 27,
+      "text": "\u201cRESEARCHER NAME\u201d ",
+      "style": "Normal"
+    },
+    {
+      "para_index": 28,
+      "text": "\u201cRESEARCHER NAME\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 29,
+      "text": "\u201cRESEARCHER NAME\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 33,
+      "text": "DECEMBER 2026",
+      "style": "Normal"
+    },
+    {
+      "para_index": 89,
+      "text": "WHAT TO WRITE",
+      "style": "Normal"
+    },
+    {
+      "para_index": 104,
+      "text": "WHAT TO WRITE",
+      "style": "Normal"
+    },
+    {
+      "para_index": 118,
+      "text": "GENERAL AND SPECIFIC OBJECTIVES",
+      "style": "Normal"
+    },
+    {
+      "para_index": 127,
+      "text": "General Objective",
+      "style": "Normal"
+    },
+    {
+      "para_index": 129,
+      "text": "Specific Objectives",
+      "style": "Normal"
+    },
+    {
+      "para_index": 137,
+      "text": "WHAT TO WRITE",
+      "style": "Normal"
+    },
+    {
+      "para_index": 149,
+      "text": "DEFINE THE PROJECT BOUNDARIES",
+      "style": "Normal"
+    },
+    {
+      "para_index": 156,
+      "text": "Scope",
+      "style": "Normal"
+    },
+    {
+      "para_index": 158,
+      "text": "Limitations",
+      "style": "Normal"
+    },
+    {
+      "para_index": 163,
+      "text": "HOW TO DEFINE TERMS",
+      "style": "Normal"
+    },
+    {
+      "para_index": 170,
+      "text": "[Term 1]: [Operational definition.]",
+      "style": "Normal"
+    },
+    {
+      "para_index": 171,
+      "text": "[Term 2]: [Operational definition.]",
+      "style": "Normal"
+    },
+    {
+      "para_index": 172,
+      "text": "[Term 3]: [Operational definition.]",
+      "style": "Normal"
+    }
+  ],
+  "examples": {
+    "direct_run_formatting": [
+      {
+        "para_index": 5,
+        "run_text": "ACLC COLLEGE OF BUKIDNON",
+        "style": "Normal"
+      },
+      {
+        "para_index": 5,
+        "run_text": " CAMPUS",
+        "style": "Normal"
+      },
+      {
+        "para_index": 6,
+        "run_text": " ",
+        "style": "Normal"
+      },
+      {
+        "para_index": 8,
+        "run_text": "3535 TS. Fashion Bldg., Hagkol, Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 12,
+        "run_text": "\u201c",
+        "style": "Normal"
+      }
+    ],
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 14,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 15,
+        "text": "A Capstone Project Proposal Presented to the Faculty of",
+        "style": "Normal"
+      },
+      {
+        "para_index": 16,
+        "text": "ACLC College of Bukidnon CAMPUS",
+        "style": "Normal"
+      },
+      {
+        "para_index": 17,
+        "text": "Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 18,
+        "text": "",
+        "style": "Normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

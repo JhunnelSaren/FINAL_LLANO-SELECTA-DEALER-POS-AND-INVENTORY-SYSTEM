@@ -48,7 +48,7 @@ interface LowStockProduct {
   id: string;
   name: string;
   sku: string;
-  stockOnHand: number;
+  availableStock: number;
   minStockLevel: number;
   deficit: number;
 }
@@ -58,6 +58,8 @@ type SubTab = 'stock' | 'movements' | 'damaged' | 'lowstock';
 const MOVEMENT_TYPES = [
   'Supplier Receiving',
   'Dispatch',
+  'Delivery Reservation',
+  'Delivery Closeout',
   'Sale Delivered',
   'Intact Return',
   'BO Quarantine',
@@ -644,11 +646,10 @@ function StockMovements({ showToast }: { showToast: (msg: string, type?: 'succes
 function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: string, type?: 'success' | 'error' | 'warning') => void }) {
   const [records, setRecords] = useState<BORecord[]>([]);
   const [customers, setCustomers] = useState<{ id: string; storeName: string; area: string }[]>([]);
-  const [products, setProducts] = useState<{ id: string; name: string; sku: string; category: string; sellingPrice: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [addForm, setAddForm] = useState({ customerId: '', productId: '', quantity: 1, reason: '', disposition: 'Pending', notes: '' });
+  const [addForm, setAddForm] = useState({ customerId: '', totalAmount: '', reason: '', disposition: 'Pending', notes: '' });
   const [dispositionTarget, setDispositionTarget] = useState<BORecord | null>(null);
   const [dispositionForm, setDispositionForm] = useState({ disposition: 'Pending', notes: '' });
 
@@ -659,7 +660,7 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
       if (!res.ok) throw new Error('Failed to load BO records');
       const data = await res.json();
       setRecords((data.records ?? []).map((r: any) => ({
-        id: r.id, storeName: r.storeName || '—', product: { name: r.productName, sku: r.productId }, qty: r.quantity,
+        id: r.id, storeName: r.storeName || '—', product: { name: Number(r.quantity) === 0 ? 'Customer BO (amount only)' : r.productName, sku: Number(r.quantity) === 0 ? 'Monetary record' : r.productId }, qty: r.quantity,
         totalDeduction: Number(r.totalDeduction) || 0, reason: r.reason, status: r.disposition === 'Refunded' ? 'REFUNDED' : 'PENDING',
         createdAt: r.createdAt, disposition: r.disposition, dispositionNotes: r.notes,
       })));
@@ -673,27 +674,19 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
-    Promise.all([
-      apiFetch('/api/customers?status=Active').then(async res => {
-        if (!res.ok) throw new Error('Could not load customers');
-        return res.json();
-      }),
-      apiFetch('/api/products').then(async res => {
-        if (!res.ok) throw new Error('Could not load products');
-        return res.json();
-      }),
-    ]).then(([customerRows, productRows]) => {
+    apiFetch('/api/customers?status=Active').then(async res => {
+      if (!res.ok) throw new Error('Could not load customers');
+      return res.json();
+    }).then((customerRows) => {
       setCustomers((Array.isArray(customerRows) ? customerRows : []).map((c: any) => ({ id: c.id, storeName: c.storeName, area: c.area })));
-      setProducts((Array.isArray(productRows) ? productRows : []).map((p: any) => ({ id: p.id, name: p.name, sku: p.sku || p.id, category: p.category, sellingPrice: Number(p.sellingPrice) || 0 })));
-    }).catch((e: any) => showToast(e.message || 'Could not load customer and product choices', 'error'));
+    }).catch((e: any) => showToast(e.message || 'Could not load customer choices', 'error'));
   }, [showToast]);
 
-  const selectedProduct = products.find(p => p.id === addForm.productId);
-  const manualBoTotal = (Number(addForm.quantity) || 0) * (selectedProduct?.sellingPrice || 0);
+  const manualBoTotal = Number(addForm.totalAmount) || 0;
 
   const submitManualBO = async () => {
-    if (!addForm.customerId || !addForm.productId || !addForm.reason.trim() || !Number.isInteger(Number(addForm.quantity)) || Number(addForm.quantity) < 1) {
-      showToast('Choose a store and product, enter a whole-number quantity, and add a reason.', 'warning');
+    if (!addForm.customerId || !addForm.reason.trim() || !Number.isFinite(manualBoTotal) || manualBoTotal <= 0) {
+      showToast('Choose a store, enter a BO total greater than zero, and add a reason.', 'warning');
       return;
     }
     if (addForm.disposition === 'Refunded' && !addForm.notes.trim()) {
@@ -704,15 +697,15 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
     try {
       const res = await apiFetch('/api/inventory/bo', {
         method: 'POST',
-        body: JSON.stringify({ ...addForm, quantity: Number(addForm.quantity) }),
+        body: JSON.stringify({ ...addForm, totalAmount: manualBoTotal }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || 'Could not record BO');
       }
-      showToast(`BO recorded (${formatPeso(manualBoTotal)}) and added to quarantine stock`, 'success');
+      showToast(`Customer BO recorded for ${formatPeso(manualBoTotal)}. Physical stock quantities were not changed.`, 'success');
       setShowAddForm(false);
-      setAddForm({ customerId: '', productId: '', quantity: 1, reason: '', disposition: 'Pending', notes: '' });
+      setAddForm({ customerId: '', totalAmount: '', reason: '', disposition: 'Pending', notes: '' });
       await load();
     } catch (e: any) {
       showToast(e.message || 'Could not record BO', 'error');
@@ -750,7 +743,7 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
   return (
     <div>
       {isAdmin && <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div><h3 className="font-semibold text-gray-800">Customer BO &amp; damaged returns</h3><p className="text-xs text-gray-500 mt-1">Delivery BOs appear here immediately and are added to quarantine stock at route reconciliation. Manual BO entries update quarantine stock now.</p></div>
+        <div><h3 className="font-semibold text-gray-800">Customer BO &amp; damaged returns</h3><p className="text-xs text-gray-500 mt-1">Delivery BOs track returned units. Manual customer BO entries record the total credit amount and do not change physical stock.</p></div>
         <button type="button" onClick={() => setShowAddForm(true)} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">+ Add Customer BO</button>
       </div>}
       {loading ? <Spinner /> : (
@@ -774,7 +767,7 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
                     <div className="font-medium text-gray-800">{r.product.name}</div>
                     <div className="text-xs text-gray-400 font-mono">{r.product.sku}</div>
                   </td>
-                  <td className="px-4 py-3 tabular-nums font-semibold text-gray-800">{r.qty}</td>
+                  <td className="px-4 py-3 tabular-nums font-semibold text-gray-800">{r.qty > 0 ? r.qty : '—'}</td>
                   <td className="px-4 py-3 tabular-nums font-semibold text-gray-800 whitespace-nowrap">{formatPeso(r.totalDeduction)}</td>
                   <td className="px-4 py-3 text-gray-600">{r.reason}</td>
                   <td className="px-4 py-3">
@@ -805,16 +798,11 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
                 <option value="">Select store</option>{customers.map(c => <option key={c.id} value={c.id}>{c.storeName} · {c.area}</option>)}
               </select>
             </label>
-            <label className="block text-sm font-medium text-gray-700">Product
-              <select value={addForm.productId} onChange={e => setAddForm({ ...addForm, productId: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-                <option value="">Select product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name} · {formatPeso(p.sellingPrice)}</option>)}
-              </select>
-            </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <label className="block text-sm font-medium text-gray-700">Quantity
-                <input type="number" min={1} step={1} value={addForm.quantity} onChange={e => setAddForm({ ...addForm, quantity: Number(e.target.value) || 0 })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
+              <label className="block text-sm font-medium text-gray-700">Customer BO total (₱)
+                <input type="number" min="0.01" step="0.01" value={addForm.totalAmount} onChange={e => setAddForm({ ...addForm, totalAmount: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="0.00" />
               </label>
-              <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-gray-700"><span className="block text-xs text-gray-500">Customer BO total</span><strong>{formatPeso(manualBoTotal)}</strong></div>
+              <div className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-gray-700"><span className="block text-xs text-gray-500">Recorded customer credit</span><strong>{formatPeso(manualBoTotal)}</strong><span className="mt-1 block text-xs text-gray-500">Not calculated from a product or unit count.</span></div>
             </div>
             <label className="block text-sm font-medium text-gray-700">Reason
               <input value={addForm.reason} onChange={e => setAddForm({ ...addForm, reason: e.target.value })} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" placeholder="Damaged, melted, or refused product" />
@@ -829,7 +817,7 @@ function DamagedBO({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: 
             </label>
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={() => setShowAddForm(false)} disabled={saving} className="flex-1 rounded-lg border border-gray-300 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button type="button" onClick={submitManualBO} disabled={saving} className="flex-1 rounded-lg bg-rose-600 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">{saving ? 'Saving…' : 'Add BO to Inventory'}</button>
+              <button type="button" onClick={submitManualBO} disabled={saving || manualBoTotal <= 0} className="flex-1 rounded-lg bg-rose-600 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60">{saving ? 'Saving…' : 'Record Customer BO'}</button>
             </div>
           </div>
         </Modal>
@@ -872,7 +860,7 @@ function LowStock({ showToast }: { showToast: (msg: string, type?: 'success' | '
         if (!res.ok) throw new Error('Failed to load low stock data');
         const data = await res.json();
         const sorted = (Array.isArray(data) ? data : data.products ?? []).map((p: any) => ({
-          id: p.id, name: p.name, sku: p.sku, stockOnHand: p.stock,
+          id: p.id, name: p.name, sku: p.sku, availableStock: p.availableStock,
           minStockLevel: p.minStock, deficit: p.deficit,
         })).sort((a: LowStockProduct, b: LowStockProduct) => b.deficit - a.deficit);
         setProducts(sorted);
@@ -903,7 +891,7 @@ function LowStock({ showToast }: { showToast: (msg: string, type?: 'success' | '
           <table className="min-w-full text-sm">
             <thead className="bg-rose-50 text-rose-800 text-xs uppercase tracking-wide">
               <tr>
-                {['SKU', 'Product', 'Current Stock', 'Min Level', 'Deficit'].map(h => (
+                {['SKU', 'Product', 'Available Stock', 'Min Level', 'Deficit'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-semibold whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -924,7 +912,7 @@ function LowStock({ showToast }: { showToast: (msg: string, type?: 'success' | '
                 <tr key={p.id} className={i % 2 === 0 ? 'bg-white hover:bg-rose-50/40' : 'bg-gray-50/50 hover:bg-rose-50/40'}>
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{p.sku}</td>
                   <td className="px-4 py-3 font-medium text-gray-800">{p.name}</td>
-                  <td className="px-4 py-3 tabular-nums font-semibold text-red-600">{p.stockOnHand}</td>
+                  <td className="px-4 py-3 tabular-nums font-semibold text-red-600">{p.availableStock}</td>
                   <td className="px-4 py-3 tabular-nums text-gray-700">{p.minStockLevel}</td>
                   <td className="px-4 py-3 tabular-nums">
                     <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">

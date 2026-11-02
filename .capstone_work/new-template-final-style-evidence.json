@@ -1,0 +1,150 @@
+{
+  "input": "D:\\JHUNNEL SAREN\\ACLC COLLEGE\\2_LLANO POS AND INVENTORY SYSTEM\\Llano_SELECTA_Dealer_POS_and_Inventory_System_Chapters_1-3_New_Template.docx",
+  "fonts_by_char_count": {
+    "Arial": 66338
+  },
+  "direct_run_formatting_runs": 435,
+  "direct_paragraph_formatting_paragraphs": 265,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 2,
+      "text": "ACLC COLLEGE OF BUKIDNON",
+      "style": "Normal"
+    },
+    {
+      "para_index": 4,
+      "text": "Llano SELECTA Dealer POS and Inventory System",
+      "style": "Normal"
+    },
+    {
+      "para_index": 13,
+      "text": "Jhunnel L. Saren  |  Ace Rienchlee Galiposo",
+      "style": "Normal"
+    },
+    {
+      "para_index": 14,
+      "text": "Ed Laurence Servandil  |  Gino Canama",
+      "style": "Normal"
+    },
+    {
+      "para_index": 15,
+      "text": "Jasper Buagas  |  Dan Micheal Responso",
+      "style": "Normal"
+    },
+    {
+      "para_index": 16,
+      "text": "Kent Michael Bacong",
+      "style": "Normal"
+    },
+    {
+      "para_index": 80,
+      "text": "Related Literature",
+      "style": "Normal"
+    },
+    {
+      "para_index": 91,
+      "text": "Selected Related Studies, Frameworks, and Standards",
+      "style": "Normal"
+    },
+    {
+      "para_index": 92,
+      "text": "Inventory Control and Record Accuracy",
+      "style": "Normal"
+    },
+    {
+      "para_index": 108,
+      "text": "Product Identification and Inventory Visibility",
+      "style": "Normal"
+    },
+    {
+      "para_index": 115,
+      "text": "Digital Tools and POS Systems in Small Organizations",
+      "style": "Normal"
+    },
+    {
+      "para_index": 130,
+      "text": "Technology Adoption, Software Quality, and Evaluation",
+      "style": "Normal"
+    },
+    {
+      "para_index": 148,
+      "text": "Synthesis and Research Gap",
+      "style": "Normal"
+    },
+    {
+      "para_index": 169,
+      "text": "Data Gathering and Requirements Analysis",
+      "style": "Normal"
+    },
+    {
+      "para_index": 198,
+      "text": "Software Requirements",
+      "style": "Normal"
+    },
+    {
+      "para_index": 277,
+      "text": " Department of Information Technology                                ",
+      "style": "Normal"
+    }
+  ],
+  "examples": {
+    "direct_run_formatting": [
+      {
+        "para_index": 2,
+        "run_text": "ACLC COLLEGE OF BUKIDNON",
+        "style": "Normal"
+      },
+      {
+        "para_index": 3,
+        "run_text": "3535 TS. Fashion Bldg., Hagkol, Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 4,
+        "run_text": "Llano SELECTA Dealer POS and Inventory System",
+        "style": "Normal"
+      },
+      {
+        "para_index": 5,
+        "run_text": "A Capstone Project Presented to the Faculty of",
+        "style": "Normal"
+      },
+      {
+        "para_index": 6,
+        "run_text": "ACLC College of Bukidnon",
+        "style": "Normal"
+      }
+    ],
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 4,
+        "text": "Llano SELECTA Dealer POS and Inventory System",
+        "style": "Normal"
+      },
+      {
+        "para_index": 5,
+        "text": "A Capstone Project Presented to the Faculty of",
+        "style": "Normal"
+      },
+      {
+        "para_index": 6,
+        "text": "ACLC College of Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 7,
+        "text": "Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 8,
+        "text": "In Partial Fulfilment of the",
+        "style": "Normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

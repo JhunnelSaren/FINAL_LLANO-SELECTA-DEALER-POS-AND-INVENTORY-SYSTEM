@@ -1,5 +1,6 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import prisma from '../db.js';
+import { Prisma } from '../../generated-prisma/index.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 
 const router = Router();
@@ -50,22 +51,30 @@ async function getRunReconciliation(runId: string, res: Response) {
       }
 
       if (stop.invoice) {
-        totalBillableAmount += stop.invoice.netAmountDue;
-        totalOutstandingCredit += stop.invoice.balanceRemaining;
+        totalBillableAmount += Number(stop.invoice.netAmountDue);
+        const deliveryPayments = stop.deliveredAt
+          ? stop.invoice.payments.filter(pay => pay.recordedAt <= stop.deliveredAt!)
+          : stop.invoice.payments;
+        const clearedOnDelivery = deliveryPayments
+          .filter(pay => pay.paymentMethod !== 'Check')
+          .reduce((sum, pay) => sum + Number(pay.amount), 0);
+        totalOutstandingCredit += stop.deliveredAt
+          ? Math.max(0, Number(stop.invoice.netAmountDue) - clearedOnDelivery)
+          : Number(stop.invoice.balanceRemaining);
 
-        for (const pay of stop.invoice.payments) {
+        for (const pay of deliveryPayments) {
           if (pay.paymentMethod === 'Cash') {
-            expectedCash += pay.amount;
+            expectedCash += Number(pay.amount);
           } else if (pay.paymentMethod === 'GCash') {
-            totalGcash += pay.amount;
+            totalGcash += Number(pay.amount);
           } else if (pay.paymentMethod === 'Bank Transfer') {
-            totalBankTransfer += pay.amount;
+            totalBankTransfer += Number(pay.amount);
           } else if (pay.paymentMethod === 'Check') {
-            totalChecks += pay.amount;
+            totalChecks += Number(pay.amount);
             if (pay.checkStatus === 'Cleared') {
-              totalClearedChecks += pay.amount;
+              totalClearedChecks += Number(pay.amount);
             } else {
-              totalPendingChecks += pay.amount;
+              totalPendingChecks += Number(pay.amount);
             }
           }
         }
@@ -75,7 +84,7 @@ async function getRunReconciliation(runId: string, res: Response) {
     const clearedFundsTotal = expectedCash + totalGcash + totalBankTransfer + totalClearedChecks;
 
     const existing = run.reconciliation;
-    const actualCash = existing ? existing.actualCashCounted : expectedCash;
+    const actualCash = existing ? Number(existing.actualCashCounted) : expectedCash;
     const cashVariance = Number((actualCash - expectedCash).toFixed(2));
 
     res.json({
@@ -117,46 +126,106 @@ async function getRunReconciliation(runId: string, res: Response) {
   }
 }
 
-async function finalizeReconciledRun(runId: string, staffName: string) {
-  const run = await prisma.deliveryRun.findUnique({ where: { id: runId }, include: { stops: { include: { items: true } } } });
-  if (!run) throw new Error('Delivery run not found.');
+class ReconciliationError extends Error {
+  constructor(message: string, readonly statusCode: number = 409) {
+    super(message);
+  }
+}
+
+async function lockRunForCloseout(tx: Prisma.TransactionClient, runId: string) {
+  const [run] = await tx.$queryRaw<Array<{ status: string }>>`
+    SELECT status FROM DeliveryRun WHERE id = ${runId} FOR UPDATE
+  `;
+  if (!run) throw new ReconciliationError('Delivery run not found.', 404);
+  return run;
+}
+
+async function finalizeReconciledRun(tx: Prisma.TransactionClient, runId: string, staffName: string) {
+  const run = await tx.deliveryRun.findUnique({ where: { id: runId }, include: { stops: { include: { items: true } } } });
+  if (!run) throw new ReconciliationError('Delivery run not found.', 404);
   if (run.status === 'Reconciled') return;
+  if (run.status !== 'Delivered') throw new ReconciliationError('Only a completed delivery run can be reconciled.');
+  if (run.stops.some(stop => stop.status === 'Pending' || stop.status === 'In Progress')) {
+    throw new ReconciliationError('Record every delivery or backload before reconciling this run.');
+  }
 
-  await prisma.$transaction(async tx => {
-    const movements = new Map<string, { name: string; loaded: number; intact: number; bo: number }>();
-    for (const stop of run.stops) {
-      for (const item of stop.items) {
-        const movement = movements.get(item.productId) || { name: item.productName, loaded: 0, intact: 0, bo: 0 };
-        movement.loaded += item.loadedQty;
-        movement.intact += item.intactReturnedQty;
-        movement.bo += item.boRefusedQty;
-        movements.set(item.productId, movement);
+  // Older dispatched runs already deducted the load from stock at dispatch.
+  const legacyDispatch = await tx.inventoryLedger.findFirst({
+    where: { reference: run.runNumber, movementType: 'Dispatch' },
+    select: { id: true },
+  });
+  const movements = new Map<string, { loaded: number; accepted: number; missing: number; intact: number; bo: number }>();
+  for (const stop of run.stops) {
+    for (const item of stop.items) {
+      const quantities = [item.loadedQty, item.acceptedQty, item.missingQty, item.intactReturnedQty, item.boRefusedQty];
+      if (quantities.some(value => !Number.isInteger(value) || value < 0)
+        || item.acceptedQty + item.missingQty + item.intactReturnedQty + item.boRefusedQty !== item.loadedQty) {
+        throw new ReconciliationError(`Loaded quantities for ${item.productName} at ${stop.storeName} do not balance. Refresh the run and correct its delivery record.`);
       }
+      const movement = movements.get(item.productId) || { loaded: 0, accepted: 0, missing: 0, intact: 0, bo: 0 };
+      movement.loaded += item.loadedQty;
+      movement.accepted += item.acceptedQty;
+      movement.missing += item.missingQty;
+      movement.intact += item.intactReturnedQty;
+      movement.bo += item.boRefusedQty;
+      movements.set(item.productId, movement);
     }
+  }
 
-    for (const [productId, movement] of movements) {
-      const product = await tx.product.findUnique({ where: { id: productId } });
-      if (!product) continue;
+  // Lock inventory in a stable order so simultaneous run closeouts do not race.
+  for (const productId of [...movements.keys()].sort()) {
+    const movement = movements.get(productId)!;
+    const [product] = await tx.$queryRaw<Array<{ id: string; name: string; stock: number; reservedStock: number }>>`
+      SELECT id, name, stock, reservedStock FROM product WHERE id = ${productId} FOR UPDATE
+    `;
+    if (!product) throw new ReconciliationError(`Product ${productId} no longer exists. Inventory closeout was not applied.`);
+
+    if (legacyDispatch) {
+      const updated = await tx.product.update({
+        where: { id: productId },
+        data: { stock: { increment: movement.intact }, quarantineStock: { increment: movement.bo } },
+      });
+      const legacyEntries: any[] = [];
+      if (movement.intact > 0) legacyEntries.push({ productId, productName: product.name, movementType: 'Intact Return', changeQty: movement.intact, runningSaleable: updated.stock, runningQuarantine: updated.quarantineStock, reference: run.runNumber, staffName, notes: `Verified intact return and backload from ${run.runNumber}` });
+      if (movement.bo > 0) legacyEntries.push({ productId, productName: product.name, movementType: 'BO Quarantine', changeQty: movement.bo, runningSaleable: updated.stock, runningQuarantine: updated.quarantineStock, reference: run.runNumber, staffName, notes: `BO returned and quarantined from ${run.runNumber}` });
+      if (legacyEntries.length) await tx.inventoryLedger.createMany({ data: legacyEntries });
+    } else {
+      const saleableReduction = movement.accepted + movement.missing + movement.bo;
+      if (product.reservedStock < movement.loaded) {
+        throw new ReconciliationError(`Reserved inventory for ${product.name} is lower than the loaded quantity. Inventory closeout was not applied.`);
+      }
+      if (product.stock < saleableReduction) {
+        throw new ReconciliationError(`Saleable inventory for ${product.name} is insufficient for closeout. Inventory closeout was not applied.`);
+      }
       const updated = await tx.product.update({
         where: { id: productId },
         data: {
           reservedStock: { decrement: movement.loaded },
-          stock: { increment: movement.intact },
+          stock: { decrement: saleableReduction },
           quarantineStock: { increment: movement.bo },
         },
       });
-      const ledgerEntries: any[] = [];
-      if (movement.intact > 0) ledgerEntries.push({ productId, productName: product.name, movementType: 'Intact Return', changeQty: movement.intact, runningSaleable: updated.stock, runningQuarantine: updated.quarantineStock, reference: run.runNumber, staffName, notes: `Verified intact return and backload from ${run.runNumber}` });
-      if (movement.bo > 0) ledgerEntries.push({ productId, productName: product.name, movementType: 'BO Quarantine', changeQty: movement.bo, runningSaleable: updated.stock, runningQuarantine: updated.quarantineStock, reference: run.runNumber, staffName, notes: `BO returned and quarantined from ${run.runNumber}` });
-      if (ledgerEntries.length) await tx.inventoryLedger.createMany({ data: ledgerEntries });
+      await tx.inventoryLedger.create({
+        data: {
+          productId,
+          productName: product.name,
+          movementType: 'Delivery Closeout',
+          changeQty: -saleableReduction,
+          runningSaleable: updated.stock,
+          runningQuarantine: updated.quarantineStock,
+          reference: run.runNumber,
+          staffName,
+          notes: `Accepted ${movement.accepted}, missing ${movement.missing}, BO quarantined ${movement.bo}, intact returned ${movement.intact}; reserved ${movement.loaded} units released from van.`,
+        },
+      });
     }
+  }
 
-    const deliveredBookingIds = run.stops.filter(stop => stop.status === 'Delivered').map(stop => stop.bookingId);
-    const backloadBookingIds = run.stops.filter(stop => stop.status === 'Failed').map(stop => stop.bookingId);
-    if (deliveredBookingIds.length) await tx.booking.updateMany({ where: { id: { in: deliveredBookingIds } }, data: { status: 'Delivered' } });
-    if (backloadBookingIds.length) await tx.booking.updateMany({ where: { id: { in: backloadBookingIds } }, data: { status: 'Backload' } });
-    await tx.deliveryRun.update({ where: { id: runId }, data: { status: 'Reconciled', reconciledAt: new Date() } });
-  });
+  const deliveredBookingIds = run.stops.filter(stop => stop.status === 'Delivered').map(stop => stop.bookingId);
+  const backloadBookingIds = run.stops.filter(stop => stop.status === 'Failed').map(stop => stop.bookingId);
+  if (deliveredBookingIds.length) await tx.booking.updateMany({ where: { id: { in: deliveredBookingIds } }, data: { status: 'Delivered' } });
+  if (backloadBookingIds.length) await tx.booking.updateMany({ where: { id: { in: backloadBookingIds } }, data: { status: 'Backload' } });
+  await tx.deliveryRun.update({ where: { id: runId }, data: { status: 'Reconciled', reconciledAt: new Date() } });
 }
 
 // GET /api/reconciliation (list or by query ?runId=)
@@ -168,7 +237,7 @@ router.get('/', authenticateToken, async (req, res: Response) => {
   try {
     const runWhere: any = {};
     const route = String(req.query.route || '').trim();
-    if (route) runWhere.route = { contains: route, mode: 'insensitive' };
+    if (route) runWhere.route = { contains: route };
     const startValue = String(req.query.startDate || req.query.dateFrom || '').trim();
     const endValue = String(req.query.endDate || req.query.dateTo || '').trim();
     const startDate = /^\d{4}-\d{2}-\d{2}$/.test(startValue) ? new Date(`${startValue}T00:00:00+08:00`) : undefined;
@@ -216,6 +285,13 @@ async function handlePostReconciliation(req: AuthenticatedRequest, res: Response
     approveException,
     notes,
   } = req.body;
+  const submittedCash = actualCashCounted ?? req.body.actualCash;
+  const hasSubmittedCash = submittedCash !== undefined && submittedCash !== null && submittedCash !== '';
+  const parsedCash = hasSubmittedCash ? Number(submittedCash) : null;
+  if (parsedCash !== null && (!Number.isFinite(parsedCash) || parsedCash < 0
+    || Math.abs(parsedCash * 100 - Math.round(parsedCash * 100)) >= 0.000001)) {
+    return res.status(400).json({ error: 'Enter a valid cash amount of zero or more with up to two decimal places.' });
+  }
 
   try {
     const run = await prisma.deliveryRun.findUnique({
@@ -261,25 +337,33 @@ async function handlePostReconciliation(req: AuthenticatedRequest, res: Response
       }
 
       if (stop.invoice) {
-        totalOutstandingCredit += stop.invoice.balanceRemaining;
-        for (const pay of stop.invoice.payments) {
+        const deliveryPayments = stop.deliveredAt
+          ? stop.invoice.payments.filter(pay => pay.recordedAt <= stop.deliveredAt!)
+          : stop.invoice.payments;
+        const clearedOnDelivery = deliveryPayments
+          .filter(pay => pay.paymentMethod !== 'Check')
+          .reduce((sum, pay) => sum + Number(pay.amount), 0);
+        totalOutstandingCredit += stop.deliveredAt
+          ? Math.max(0, Number(stop.invoice.netAmountDue) - clearedOnDelivery)
+          : Number(stop.invoice.balanceRemaining);
+        for (const pay of deliveryPayments) {
           if (pay.paymentMethod === 'Cash') {
-            expectedCash += pay.amount;
+            expectedCash += Number(pay.amount);
           } else if (pay.paymentMethod === 'GCash') {
-            totalGcash += pay.amount;
+            totalGcash += Number(pay.amount);
           } else if (pay.paymentMethod === 'Bank Transfer') {
-            totalBankTransfer += pay.amount;
+            totalBankTransfer += Number(pay.amount);
           } else if (pay.paymentMethod === 'Check') {
-            totalChecks += pay.amount;
+            totalChecks += Number(pay.amount);
             if (pay.checkStatus === 'Cleared') {
-              totalClearedChecks += pay.amount;
+              totalClearedChecks += Number(pay.amount);
             }
           }
         }
       }
     }
 
-    const actualCash = Number(actualCashCounted) || 0;
+    const actualCash = parsedCash === null ? Number(expectedCash.toFixed(2)) : Number(parsedCash.toFixed(2));
     // Cash Variance = actual cash counted - expected cash
     const cashVariance = Number((actualCash - expectedCash).toFixed(2));
     const totalClearedFunds = Number((actualCash + totalGcash + totalBankTransfer + totalClearedChecks).toFixed(2));
@@ -295,9 +379,22 @@ async function handlePostReconciliation(req: AuthenticatedRequest, res: Response
     }
 
     // Upsert RouteReconciliation
-    const reconciliation = await prisma.routeReconciliation.upsert({
-      where: { deliveryRunId: run.id },
-      update: {
+    const transactionResult = await prisma.$transaction(async tx => {
+      const lockedRun = await lockRunForCloseout(tx, run.id);
+      if (lockedRun.status === 'Reconciled') {
+        const existing = await tx.routeReconciliation.findUnique({ where: { deliveryRunId: run.id } });
+        if (!existing) throw new Error('The reconciled run has no reconciliation record.');
+        return { reconciliation: existing, status: existing.status };
+      }
+      if (lockedRun.status !== 'Delivered') throw new ReconciliationError('Only a completed delivery run can be reconciled.');
+      const existing = await tx.routeReconciliation.findUnique({ where: { deliveryRunId: run.id } });
+      if (existing?.status === 'Approved') {
+        await finalizeReconciledRun(tx, run.id, req.user?.name || 'Staff');
+        return { reconciliation: existing, status: existing.status };
+      }
+      if (existing) throw new ReconciliationError('This run already has a reconciliation awaiting Admin review.');
+
+      const values = {
         reconciliationDate: new Date(),
         totalLoadedUnits,
         totalDeliveredAccepted,
@@ -316,43 +413,29 @@ async function handlePostReconciliation(req: AuthenticatedRequest, res: Response
         status,
         approvedBy: status === 'Approved' ? req.user?.name || 'Dealer Admin' : null,
         approvedAt: status === 'Approved' ? new Date() : null,
-      },
-      create: {
-        deliveryRunId: run.id,
-        reconciliationDate: new Date(),
-        totalLoadedUnits,
-        totalDeliveredAccepted,
-        totalIntactReturned,
-        totalBoReturned,
-        totalMissingUnaccounted,
-        expectedCash,
-        actualCashCounted: actualCash,
-        cashVariance,
-        totalGcash,
-        totalBankTransfer,
-        totalChecks,
-        totalClearedFunds,
-        outstandingCredit: totalOutstandingCredit,
-        discrepancyReason: discrepancyReason || notes || null,
-        status,
-        approvedBy: status === 'Approved' ? req.user?.name || 'Dealer Admin' : null,
-        approvedAt: status === 'Approved' ? new Date() : null,
-      },
+      };
+      const reconciliation = await tx.routeReconciliation.upsert({
+        where: { deliveryRunId: run.id },
+        update: values,
+        create: { deliveryRunId: run.id, ...values },
+      });
+      if (status === 'Approved') await finalizeReconciledRun(tx, run.id, req.user?.name || 'Staff');
+      return { reconciliation, status };
     });
 
-    if (status === 'Approved') await finalizeReconciledRun(run.id, req.user?.name || 'Staff');
     await recordAudit('Route Reconciliation', 'Delivery Reconciliation', req.user?.name || 'Staff', {
       runNumber: run.runNumber,
       cashVariance,
-      status,
+      status: transactionResult.status,
     });
 
     res.json({
       success: true,
-      reconciliation,
-      status,
+      reconciliation: transactionResult.reconciliation,
+      status: transactionResult.status,
     });
   } catch (err: any) {
+    if (err instanceof ReconciliationError) return res.status(err.statusCode).json({ error: err.message });
     res.status(500).json({ error: err.message });
   }
 }
@@ -371,21 +454,26 @@ async function handleApproveReconciliation(req: AuthenticatedRequest, res: Respo
   const { recId } = req.params;
   const { adminNotes } = req.body;
   try {
-    const existing = await prisma.routeReconciliation.findUnique({ where: { id: recId }, include: { deliveryRun: true } });
-    if (!existing) return res.status(404).json({ error: 'Reconciliation record not found.' });
-    if (existing.status !== 'Pending Approval') return res.status(409).json({ error: 'Only reconciliations pending approval can be approved.' });
-    if (existing.deliveryRun.status !== 'Delivered') return res.status(409).json({ error: 'The delivery run must be complete before approval.' });
-    const rec = await prisma.routeReconciliation.update({
-      where: { id: recId },
-      data: {
-        status: 'Approved',
-        approvedBy: req.user?.name || 'Dealer Admin',
-        approvedAt: new Date(),
-        discrepancyReason: adminNotes ? `Admin Approval: ${adminNotes}` : undefined,
-      },
+    const rec = await prisma.$transaction(async tx => {
+      const reference = await tx.routeReconciliation.findUnique({ where: { id: recId }, select: { deliveryRunId: true } });
+      if (!reference) throw new ReconciliationError('Reconciliation record not found.', 404);
+      const lockedRun = await lockRunForCloseout(tx, reference.deliveryRunId);
+      if (lockedRun.status !== 'Delivered') throw new ReconciliationError('The delivery run must be complete before approval.');
+      const existing = await tx.routeReconciliation.findUnique({ where: { id: recId } });
+      if (!existing) throw new ReconciliationError('Reconciliation record not found.', 404);
+      if (existing.status !== 'Pending Approval') throw new ReconciliationError('Only reconciliations pending approval can be approved.');
+      const approved = await tx.routeReconciliation.update({
+        where: { id: recId },
+        data: {
+          status: 'Approved',
+          approvedBy: req.user?.name || 'Dealer Admin',
+          approvedAt: new Date(),
+          discrepancyReason: adminNotes ? `Admin Approval: ${adminNotes}` : undefined,
+        },
+      });
+      await finalizeReconciledRun(tx, approved.deliveryRunId, req.user?.name || 'Admin');
+      return approved;
     });
-
-    await finalizeReconciledRun(rec.deliveryRunId, req.user?.name || 'Admin');
 
     await recordAudit('Approve Reconciliation', 'Delivery Reconciliation', req.user?.name || 'Admin', {
       recId,
@@ -394,6 +482,7 @@ async function handleApproveReconciliation(req: AuthenticatedRequest, res: Respo
 
     res.json({ success: true, reconciliation: rec });
   } catch (err: any) {
+    if (err instanceof ReconciliationError) return res.status(err.statusCode).json({ error: err.message });
     res.status(500).json({ error: err.message });
   }
 }

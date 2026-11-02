@@ -16,6 +16,7 @@
     "prisma:generate": "npm run prisma:generate --prefix server",
     "prisma:push": "npm run prisma:push --prefix server",
     "prisma:seed": "npm run prisma:seed --prefix server",
+    "prisma:bootstrap": "npm run prisma:bootstrap --prefix server",
     "setup": "npm run prisma:generate && npm run prisma:safe-sync && npm run prisma:bootstrap",
     "prisma:safe-sync": "npm run prisma:safe-sync --prefix server"
   },

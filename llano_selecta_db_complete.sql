@@ -1,4 +1,7 @@
--- ============================================================================
+﻿-- ============================================================================
+-- LEGACY POSTGRESQL RESET SCRIPT — DO NOT RUN AGAINST LARAGON MYSQL OR THE LIVE DATABASE.
+-- This file contains destructive DROP TABLE commands. The live app schema is server/prisma/schema.prisma;
+-- use npm run setup for the MySQL database. Existing records are not to be reset.
 -- LLANO SELECTA DEALER POS AND INVENTORY SYSTEM
 -- DATABASE: llano_selecta_db (PostgreSQL / pgAdmin 4)
 -- Location: Valencia City, San Fernando & Cabanglasan, Bukidnon, Philippines
@@ -16,8 +19,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ----------------------------------------------------------------------------
 -- 1. CLEANUP PREVIOUS TABLES (Safe initialization)
 -- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS "AuditLog" CASCADE;DATABASE_URL="postgresql://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/llano_selecta_db?schema=public"
-JWT_SECRET="replace-with-a-long-random-secret"
+DROP TABLE IF EXISTS "AuditLog" CASCADE;
 DROP TABLE IF EXISTS "SystemSetting" CASCADE;
 DROP TABLE IF EXISTS "SelectaPosQuotaEntry" CASCADE;
 DROP TABLE IF EXISTS "SelectaPosQuota" CASCADE;
@@ -414,11 +416,11 @@ CREATE TABLE "SystemSetting" (
     "freezerTotalFee" NUMERIC(12, 2) NOT NULL DEFAULT 10000.00,
     "freezerProductAllocation" NUMERIC(12, 2) NOT NULL DEFAULT 9000.00,
     "freezerProcessingFee" NUMERIC(12, 2) NOT NULL DEFAULT 1000.00,
-    "mondayRoute" VARCHAR(128) NOT NULL DEFAULT 'Valencia – San Fernando Route',
+    "mondayRoute" VARCHAR(128) NOT NULL DEFAULT 'Valencia â€“ San Fernando Route',
     "tuesdayRoute" VARCHAR(128) NOT NULL DEFAULT 'Cabanglasan Delivery Route',
     "wednesdayActivity" VARCHAR(128) NOT NULL DEFAULT 'Selecta Bodega Stock Arrival & Verification',
     "thursdayRoute" VARCHAR(128) NOT NULL DEFAULT 'Cabanglasan Bongo Delivery Run',
-    "fridayRoute" VARCHAR(128) NOT NULL DEFAULT 'Valencia – San Fernando Bongo Delivery Run',
+    "fridayRoute" VARCHAR(128) NOT NULL DEFAULT 'Valencia â€“ San Fernando Bongo Delivery Run',
     "allowNegativeStock" BOOLEAN NOT NULL DEFAULT FALSE,
     "updatedAt" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

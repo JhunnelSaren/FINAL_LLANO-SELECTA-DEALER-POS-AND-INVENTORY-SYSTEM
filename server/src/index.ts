@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import { Prisma } from '../generated-prisma/index.js';
 
 import authRoutes from './routes/auth.routes.js';
 import usersRoutes from './routes/users.routes.js';
@@ -25,6 +26,17 @@ import { deactivateDormantCustomers } from './customers.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const projectRoot = path.resolve(__dirname, '../..');
+
+function normalizeApiValues(value: any): any {
+  if (Prisma.Decimal.isDecimal(value)) return value.toNumber();
+  if (value instanceof Date) return value;
+  if (Array.isArray(value)) return value.map(normalizeApiValues);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, normalizeApiValues(child)]));
+  }
+  return value;
+}
 
 app.use(cors({
   origin: '*',
@@ -34,10 +46,15 @@ app.use(cors({
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use((_req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (body: any) => json(normalizeApiValues(body));
+  next();
+});
 
 // Static uploads directory - support both root and server relative paths
-const rootUploadDir = path.resolve('./uploads');
-const serverUploadDir = path.resolve('./server/uploads');
+const rootUploadDir = path.join(projectRoot, 'uploads');
+const serverUploadDir = path.join(projectRoot, 'server', 'uploads');
 if (!fs.existsSync(rootUploadDir)) fs.mkdirSync(rootUploadDir, { recursive: true });
 if (!fs.existsSync(serverUploadDir)) fs.mkdirSync(serverUploadDir, { recursive: true });
 app.use('/uploads', express.static(serverUploadDir));
@@ -77,7 +94,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
 // In production, serve static files from client/dist
-const clientDist = path.resolve('../client/dist');
+const clientDist = path.join(projectRoot, 'client', 'dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.get('*', (_req, res) => {
@@ -99,7 +116,7 @@ if (process.env.NODE_ENV !== 'test') {
     console.log(`🚀 Llano Selecta Dealer POS and Inventory Backend Server Running`);
     console.log(`   Port: ${PORT}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`   Database: PostgreSQL (Prisma ORM)`);
+    console.log(`   Database: MySQL (Prisma ORM)`);
     console.log(`   Timezone: Asia/Manila`);
     console.log(`================================================================`);
     void deactivateDormantCustomers().catch((err) => console.error('Store inactivity check failed:', err));

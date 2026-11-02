@@ -1,7 +1,10 @@
 const BASE_URL = '/api';
 
 export function getAuthToken(): string | null {
-  return localStorage.getItem('llano_token') || localStorage.getItem('token');
+  return localStorage.getItem('llano_token')
+    || sessionStorage.getItem('llano_token')
+    || localStorage.getItem('token')
+    || sessionStorage.getItem('token');
 }
 
 export async function apiRequest<T = any>(

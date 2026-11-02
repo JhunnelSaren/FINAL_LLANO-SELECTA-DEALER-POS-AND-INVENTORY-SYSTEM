@@ -78,7 +78,7 @@ router.get('/bo', authenticateToken, async (req, res: Response) => {
     });
 
     const totalQuarantinedUnits = boRecords.reduce((sum, it) => sum + it.quantity, 0);
-    const totalDeductionsValue = boRecords.reduce((sum, it) => sum + it.totalDeduction, 0);
+    const totalDeductionsValue = boRecords.reduce((sum, it) => sum + Number(it.totalDeduction), 0);
 
     res.json({
       totalQuarantinedUnits,
@@ -90,17 +90,16 @@ router.get('/bo', authenticateToken, async (req, res: Response) => {
   }
 });
 
-// POST /api/inventory/bo (Manually record customer BO and quarantine returned stock)
+// POST /api/inventory/bo (Record a customer BO credit amount without changing stock)
 router.post('/bo', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const customerId = String(req.body.customerId || '').trim();
-  const productId = String(req.body.productId || '').trim();
-  const quantity = Number(req.body.quantity);
+  const totalAmount = Number(req.body.totalAmount ?? req.body.amount);
   const reason = String(req.body.reason || '').trim();
   const notes = String(req.body.notes || '').trim();
   const disposition = String(req.body.disposition || 'Pending');
 
-  if (!customerId || !productId || !Number.isInteger(quantity) || quantity < 1 || !reason) {
-    return res.status(400).json({ error: 'Choose a customer and product, enter a positive whole-number quantity, and provide a reason.' });
+  if (!customerId || !Number.isFinite(totalAmount) || totalAmount <= 0 || !reason) {
+    return res.status(400).json({ error: 'Choose a customer, enter a BO total greater than zero, and provide a reason.' });
   }
   if (!['Pending', 'Refunded'].includes(disposition)) {
     return res.status(400).json({ error: 'BO status must be Pending or Refunded.' });
@@ -110,60 +109,34 @@ router.post('/bo', authenticateToken, requireRole('Admin'), async (req: Authenti
   }
 
   try {
-    const [customer, product] = await Promise.all([
-      prisma.customer.findUnique({ where: { id: customerId } }),
-      prisma.product.findUnique({ where: { id: productId } }),
-    ]);
+    const customer = await prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer) return res.status(404).json({ error: 'Customer store not found.' });
-    if (!product) return res.status(404).json({ error: 'Product not found.' });
 
-    const unitPrice = Number(product.sellingPrice);
-    const totalDeduction = Number((unitPrice * quantity).toFixed(2));
+    const totalDeduction = Number(totalAmount.toFixed(2));
     const id = `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`;
     const staffName = req.user?.name || 'Dealer Admin';
-    const result = await prisma.$transaction(async tx => {
-      const updatedProduct = await tx.product.update({
-        where: { id: product.id },
-        data: { quarantineStock: { increment: quantity } },
-      });
-      const record = await tx.boDiscrepancy.create({
-        data: {
-          id,
-          customerId: customer.id,
-          storeName: customer.storeName,
-          productId: product.id,
-          productName: product.name,
-          category: product.category,
-          quantity,
-          unitPrice,
-          totalDeduction,
-          reason,
-          reportedBy: staffName,
-          disposition,
-          dispositionBy: disposition === 'Refunded' ? staffName : null,
-          dispositionAt: disposition === 'Refunded' ? new Date() : null,
-          notes: notes || null,
-        },
-      });
-      await tx.inventoryLedger.create({
-        data: {
-          productId: product.id,
-          productName: product.name,
-          category: product.category,
-          movementType: 'BO Quarantine',
-          changeQty: quantity,
-          runningSaleable: updatedProduct.stock,
-          runningQuarantine: updatedProduct.quarantineStock,
-          reference: id,
-          staffName,
-          notes: `Manual customer BO from ${customer.storeName}: ${reason}`,
-        },
-      });
-      return record;
+    const result = await prisma.boDiscrepancy.create({
+      data: {
+        id,
+        customerId: customer.id,
+        storeName: customer.storeName,
+        productId: 'CUSTOMER-BO',
+        productName: 'Customer BO Amount',
+        category: 'Customer BO Amount',
+        quantity: 0,
+        unitPrice: totalDeduction,
+        totalDeduction,
+        reason,
+        reportedBy: staffName,
+        disposition,
+        dispositionBy: disposition === 'Refunded' ? staffName : null,
+        dispositionAt: disposition === 'Refunded' ? new Date() : null,
+        notes: notes || null,
+      },
     });
 
     await recordAudit('Record Customer BO', 'Inventory', staffName, {
-      boId: id, storeName: customer.storeName, product: product.name, quantity, totalDeduction, disposition,
+      boId: id, storeName: customer.storeName, type: 'Amount only', totalDeduction, disposition,
     });
     res.status(201).json(result);
   } catch (err: any) {
@@ -220,12 +193,12 @@ router.get('/low-stock', authenticateToken, async (_req, res: Response) => {
   try {
     const products = await prisma.product.findMany();
     const lowStock = products
-      .filter((p) => p.stock <= p.minStock)
+      .map((p) => ({ ...p, availableStock: Math.max(0, p.stock - p.reservedStock) }))
+      .filter((p) => p.availableStock <= p.minStock)
       .map((p) => ({
         ...p,
-        availableStock: Math.max(0, p.stock - p.reservedStock),
-        deficit: Math.max(0, p.minStock - p.stock),
-        suggestedReorder: Math.max(20, (p.minStock * 2) - p.stock),
+        deficit: Math.max(0, p.minStock - p.availableStock),
+        suggestedReorder: Math.max(20, (p.minStock * 2) - p.availableStock),
       }));
 
     res.json(lowStock);

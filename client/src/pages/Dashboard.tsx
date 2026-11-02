@@ -7,6 +7,7 @@ import {
 import { apiRequest } from '../utils/api';
 import { formatPeso, formatDate } from '../utils/formatters';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 
 interface DashboardData {
   metrics: {
@@ -26,10 +27,12 @@ interface DashboardData {
 
 interface DashboardProps {
   setActiveTab: (tab: string) => void;
-  setSubTab?: (tab: string) => void;
+  setOrdersSubTab?: (tab: 'bookings' | 'receiving' | 'prepare' | 'delivery') => void;
+  setSalesReportsSubTab?: (tab: 'receipts' | 'collection' | 'quota' | 'reports') => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab, setOrdersSubTab, setSalesReportsSubTab }) => {
+  const { isAdmin } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,6 +79,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
   if (!m) return null;
 
   const today = new Date().toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Manila' });
+  const openOrders = (tab: 'bookings' | 'receiving' | 'prepare' | 'delivery') => {
+    setOrdersSubTab?.(tab);
+    setActiveTab('orders-delivery');
+  };
+  const openSalesReports = (tab: 'receipts' | 'collection' | 'quota' | 'reports') => {
+    setSalesReportsSubTab?.(tab);
+    setActiveTab('sales-reports');
+  };
 
   const metricCards = [
     {
@@ -84,7 +95,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: 'blue',
       value: m.todayBookings.count,
       sub: `${m.todayBookings.scheduledDeliveries} trips scheduled today`,
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => openOrders('bookings'),
       alert: false,
     },
     {
@@ -93,7 +104,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: 'amber',
       value: m.bookingsToPrepare,
       sub: 'Waiting for stock and delivery planning',
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => openOrders('prepare'),
       alert: m.bookingsToPrepare > 0,
     },
     {
@@ -102,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: 'violet',
       value: m.stockReceiptsToday,
       sub: 'Receipts recorded with stock added to inventory',
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => openOrders('receiving'),
       alert: false,
     },
     {
@@ -122,7 +133,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: 'blue',
       value: m.deliveryStatus.inProgress,
       sub: `${m.deliveryStatus.awaitingReconciliation} completed deliveries`,
-      onClick: () => setActiveTab('orders-delivery'),
+      onClick: () => openOrders('delivery'),
       alert: m.deliveryStatus.inProgress > 0,
     },
     {
@@ -131,7 +142,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: m.outstandingBalances.totalAmount > 0 ? 'amber' : 'emerald',
       value: formatPeso(m.outstandingBalances.totalAmount),
       sub: `${m.outstandingBalances.count} stores with unpaid balances`,
-      onClick: () => setActiveTab('sales-reports'),
+      onClick: () => openSalesReports('collection'),
       alert: m.outstandingBalances.totalAmount > 0,
     },
     {
@@ -140,7 +151,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: m.discrepancies.pendingApprovalsCount > 0 ? 'rose' : 'emerald',
       value: m.discrepancies.pendingApprovalsCount,
       sub: `${m.discrepancies.pendingApprovalsCount} route record(s) pending review | ${m.discrepancies.pendingBoCount} BO items pending disposition | ${formatPeso(m.discrepancies.pendingShortageAmount)} shortage`,
-      onClick: () => setActiveTab('sales-reports'),
+      onClick: () => openSalesReports('collection'),
       alert: m.discrepancies.pendingApprovalsCount > 0,
     },
     {
@@ -160,10 +171,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
       color: m.quota.percentage >= 100 ? 'emerald' : m.quota.percentage >= 75 ? 'blue' : 'amber',
       value: `${m.quota.percentage}%`,
       sub: `${formatPeso(m.quota.achieved)} of ${formatPeso(m.quota.target)} | Remaining: ${formatPeso(m.quota.remaining)}`,
-      onClick: () => setActiveTab('sales-reports'),
+      onClick: () => openSalesReports('quota'),
       alert: false,
     },
   ];
+  const visibleMetricCards = isAdmin ? metricCards : metricCards.filter(card =>
+    !['Outstanding Customer Balances', 'Cash Discrepancies', 'Freezers Due for Verification'].includes(card.label) &&
+    !card.label.startsWith('Selecta POS Quota')
+  );
 
   const colorMap: Record<string, string> = {
     blue: 'bg-blue-50 border-blue-200 text-blue-600',
@@ -192,7 +207,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
 
       {/* 9 Metric Cards — all clickable */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {metricCards.map((card, idx) => {
+        {visibleMetricCards.map((card, idx) => {
           const Icon = card.icon;
           const colors = colorMap[card.color] || colorMap.blue;
           return (
@@ -226,7 +241,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
             <h3 className="font-bold text-slate-800">Monthly Selecta POS Quota Progress — {m.quota.monthYear}</h3>
           </div>
           <button
-            onClick={() => setActiveTab('sales-reports')}
+            onClick={() => openSalesReports('quota')}
             className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-1"
           >
             Manage Quota <ChevronRight className="w-3.5 h-3.5" />
@@ -265,7 +280,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
               <h3 className="font-bold text-slate-700 text-sm">Recent Bookings</h3>
             </div>
             <button
-              onClick={() => setActiveTab('orders-delivery')}
+              onClick={() => openOrders('bookings')}
               className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-0.5"
             >
               View All <ChevronRight className="w-3.5 h-3.5" />
@@ -299,7 +314,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setActiveTab }) => {
               <h3 className="font-bold text-slate-700 text-sm">Recent Delivery Runs</h3>
             </div>
             <button
-              onClick={() => setActiveTab('orders-delivery')}
+              onClick={() => openOrders('delivery')}
               className="text-xs text-rose-600 hover:text-rose-700 font-semibold flex items-center gap-0.5"
             >
               View All <ChevronRight className="w-3.5 h-3.5" />

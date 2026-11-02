@@ -46,6 +46,7 @@ export function calculateDeliveryAmounts(
   previousBalance: number,
   paymentMethod: string,
   amountCollected: number,
+  shortDeductionAmount = 0,
 ) {
   const productBillAmount = roundCurrency(lines.reduce(
     (sum, line) => sum + line.acceptedQty * line.unitPrice,
@@ -55,7 +56,8 @@ export function calculateDeliveryAmounts(
     (sum, line) => sum + line.boRefusedQty * line.unitPrice,
     0,
   ));
-  const finalProductBill = Math.max(0, roundCurrency(productBillAmount - boDeductionAmount));
+  const shortDeduction = roundCurrency(shortDeductionAmount);
+  const finalProductBill = Math.max(0, roundCurrency(productBillAmount - boDeductionAmount - shortDeduction));
   const totalAmountDue = roundCurrency(finalProductBill + previousBalance);
   const clearedPaymentAmount = paymentMethod === 'Check' ? 0 : amountCollected;
   const balanceRemaining = Math.max(0, roundCurrency(totalAmountDue - clearedPaymentAmount));

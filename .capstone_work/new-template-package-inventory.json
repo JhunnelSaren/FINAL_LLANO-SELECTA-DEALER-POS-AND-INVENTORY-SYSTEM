@@ -1,0 +1,131 @@
+{
+  "reference": "C:\\Users\\LENOVO I5\\Downloads\\CAPSTONE TEMPLATE (1).docx",
+  "sha256": "e90fb532ee0b1e7ac77248861672cce90c5e7682bc83631c600e692c8d425e1c",
+  "parts": [
+    {
+      "part": "[Content_Types].xml",
+      "size": 2019,
+      "sha256": "177a300f77b4af7913cbf6abcb899b4fc198508cf2f8256bb9b2b99e17d680ba"
+    },
+    {
+      "part": "_rels/.rels",
+      "size": 590,
+      "sha256": "e19238d7a71fa7a2490776252686f70e2de6238c87cd509b5e3a3cc07c2ea4df"
+    },
+    {
+      "part": "word/document.xml",
+      "size": 159586,
+      "sha256": "c8bd3d88b3e5e9f8385b8bb57d00a563230f3ef339cf0bb52d8be49292200801"
+    },
+    {
+      "part": "word/_rels/document.xml.rels",
+      "size": 1884,
+      "sha256": "005a82dd0885f66318769ed84710864ff19123ede7e758b49435548da680ee0a"
+    },
+    {
+      "part": "word/footnotes.xml",
+      "size": 3018,
+      "sha256": "e86b131eb02d4f53cf9c5c74dc616d73861107be90d4624dbe5ad902c567a320"
+    },
+    {
+      "part": "word/endnotes.xml",
+      "size": 3012,
+      "sha256": "58e0c961ec6c501408592bc2c73342767e5d2dbad58ad5e1c30459e6b8500260"
+    },
+    {
+      "part": "word/header1.xml",
+      "size": 29562,
+      "sha256": "28b020bd538cdae39a1140bbb84c777d5d1a007f9381256a333318617f7ab550"
+    },
+    {
+      "part": "word/_rels/header1.xml.rels",
+      "size": 554,
+      "sha256": "55f5bcbc18fa783a0c86085920d15b9e1a29ce4e80ba69b3f25ae3074ef344b0"
+    },
+    {
+      "part": "word/media/image1.png",
+      "size": 55187,
+      "sha256": "3fa5daf53260a4442be279665e19f506131c6e60ffc6c91a0091de0e5142dfae"
+    },
+    {
+      "part": "word/media/image2.png",
+      "size": 24542,
+      "sha256": "397b4e3a552e6a8b8eb8b60369902baf485e66e8646a785f0d60fea14c5c5c73"
+    },
+    {
+      "part": "word/media/image3.png",
+      "size": 1089507,
+      "sha256": "52523ce69f6135c8f23651cc48026f809d2f6372490c28caf6176470e8fbd831"
+    },
+    {
+      "part": "word/media/image4.png",
+      "size": 180038,
+      "sha256": "4b580259b196af3682877429501326043f6b7c8cdec23c9b66d2ce1fc60e4d38"
+    },
+    {
+      "part": "word/theme/theme1.xml",
+      "size": 7643,
+      "sha256": "b2295d3198893d2c03f5e584c749a15751b798aefdcd9bee2889f13903d68cb2"
+    },
+    {
+      "part": "word/settings.xml",
+      "size": 4105,
+      "sha256": "396eeed6a6eb706b549cf468d07b34d2db75b678cd540eef2bfd32950d27561c"
+    },
+    {
+      "part": "customXml/item1.xml",
+      "size": 15574,
+      "sha256": "3664e798205f736dc115f2dbfcf75d555e12e4dcf56c2b3288e4aec07b798895"
+    },
+    {
+      "part": "customXml/itemProps1.xml",
+      "size": 341,
+      "sha256": "232bd8ca28dc3d7d7221f72687fc96e8de5e92ae561ef3bc425cfd7233f4a568"
+    },
+    {
+      "part": "word/numbering.xml",
+      "size": 32081,
+      "sha256": "847a3c916be790a1b0a57a0d9039b1ab44ca4a1af95912e229aaecdd4c5147d6"
+    },
+    {
+      "part": "word/styles.xml",
+      "size": 36544,
+      "sha256": "24d6f7826499dccd271c32e8be0219c6cf00cdbcf928d297e3bf10f8ac2afdaf"
+    },
+    {
+      "part": "word/webSettings.xml",
+      "size": 1018,
+      "sha256": "3346314c93078070b454a95d0485bf9721dade13d89cfaa579cc32645fa7edef"
+    },
+    {
+      "part": "word/fontTable.xml",
+      "size": 2891,
+      "sha256": "6cd6208b1a28e5b4ec2085a568be68ecd542c5e9df48f5827ae4018cd22c9028"
+    },
+    {
+      "part": "docProps/core.xml",
+      "size": 682,
+      "sha256": "fe47ee2061c49ee6c9e9ce894b7e04f26885cfdf4f4cee5a54d40db149fa7949"
+    },
+    {
+      "part": "docProps/app.xml",
+      "size": 996,
+      "sha256": "4b4b7a8ce4f939346e2935ef8e82d86c6cb84dda0b65d77c88883f268fec8aaa"
+    },
+    {
+      "part": "customXml/_rels/item1.xml.rels",
+      "size": 296,
+      "sha256": "80482f86e196171d66001e0e74d1900408a3aaf2463e54005d251b5f2db9a0b0"
+    },
+    {
+      "part": "word/media/image12.png",
+      "size": 70,
+      "sha256": "fcda39d2dbd12ae32058eb3c2001ab862fb537093616a4027b5224daea3a674a"
+    },
+    {
+      "part": "word/media/image9.png",
+      "size": 70,
+      "sha256": "3b7ca0c307f9e6d3e40b8dbc0f246176038ac65ca83de4fc102ae90a05c4096e"
+    }
+  ]
+}

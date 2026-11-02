@@ -56,7 +56,7 @@ router.get('/sales', authenticateToken, async (req, res: Response) => {
         const product = products.get(key) || { name: item.productName, sku: item.productId, qty: 0, revenue: 0 };
         const billableQty = Math.max(0, item.acceptedQty - item.boRefusedQty);
         product.qty += billableQty;
-        product.revenue += billableQty * item.unitPrice;
+        product.revenue += billableQty * Number(item.unitPrice);
         products.set(key, product);
       }
     }

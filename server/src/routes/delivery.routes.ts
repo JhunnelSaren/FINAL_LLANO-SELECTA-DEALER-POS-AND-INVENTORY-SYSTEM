@@ -327,6 +327,7 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
     bankName,
     checkDate,
     notes,
+    shortDeductionAmount: submittedShortDeduction,
   } = req.body;
 
   try {
@@ -351,6 +352,11 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
     if (paid > 0 && paymentMethod === 'Check'
       && (!bank || !checkDateValue || !Number.isFinite(new Date(checkDateValue).getTime()))) {
       throw new DeliveryWorkflowError(400, 'Enter the bank name and a valid check date.');
+    }
+    const shortDeduction = Number(submittedShortDeduction ?? 0);
+    const isValidMoney = (value: number) => Number.isFinite(value) && value >= 0 && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001;
+    if (!isValidMoney(shortDeduction)) {
+      throw new DeliveryWorkflowError(400, 'Short total must be a non-negative amount with up to two decimal places.');
     }
     if (!Array.isArray(deliveredLines)) {
       return res.status(400).json({ error: 'Enter delivery results for every loaded product.' });
@@ -389,6 +395,8 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
       const itemUpdates: { id: string; acceptedQty: number; boRefusedQty: number; intactReturnedQty: number; notes: string | null }[] = [];
       const boDiscrepanciesToCreate: any[] = [];
       const amountLines: { acceptedQty: number; boRefusedQty: number; unitPrice: number }[] = [];
+      let grossDeliveryAmount = 0;
+      let intactReturnDeductionAmount = 0;
 
       for (const existingItem of stop.items) {
         const line = submittedLines.get(existingItem.id) || submittedLines.get(existingItem.productId);
@@ -417,6 +425,8 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
           notes: typeof line.notes === 'string' ? line.notes.trim() || null : null,
         });
         amountLines.push({ acceptedQty, boRefusedQty, unitPrice });
+        grossDeliveryAmount += existingItem.loadedQty * unitPrice;
+        intactReturnDeductionAmount += intactReturnedQty * unitPrice;
 
         if (boRefusedQty > 0) {
           const boCredit = Number((boRefusedQty * unitPrice).toFixed(2));
@@ -450,7 +460,11 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
         Number(customer.currentBalance) || 0,
         paymentMethod,
         paid,
+        shortDeduction,
       );
+      if (shortDeduction > Math.max(0, totals.productBillAmount - totals.boDeductionAmount)) {
+        throw new DeliveryWorkflowError(400, 'The short total cannot exceed the product bill after BO deductions.');
+      }
       if (paid > totals.totalAmountDue) {
         throw new DeliveryWorkflowError(400, 'Amount collected cannot exceed the delivery bill plus the previous balance.');
       }
@@ -480,8 +494,11 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
           customerId: stop.customerId,
           storeName: stop.storeName,
           invoiceDate: new Date(),
-          billableProductAmount: totals.finalProductBill,
+          grossDeliveryAmount: Number(grossDeliveryAmount.toFixed(2)),
+          billableProductAmount: totals.productBillAmount,
           boDeductionAmount: totals.boDeductionAmount,
+          shortDeductionAmount: Number(shortDeduction.toFixed(2)),
+          intactReturnDeductionAmount: Number(intactReturnDeductionAmount.toFixed(2)),
           otherCharges: 0,
           approvedDiscounts: 0,
           priorBalance: totals.previousBalance,

@@ -4,5 +4,8 @@ dist
 .env
 *.log
 dev.db-journal
+__pycache__/
+*.py[cod]
+~$*
 uploads/*
 !uploads/.gitkeep

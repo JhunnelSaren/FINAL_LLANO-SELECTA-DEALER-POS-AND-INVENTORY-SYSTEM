@@ -14,6 +14,8 @@ import {
   Clock,
   CheckCircle2,
   Bell,
+  Check,
+  Trash2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { apiRequest } from '../../utils/api';
@@ -30,7 +32,61 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [notificationActionBusy, setNotificationActionBusy] = useState(false);
+  const [notificationError, setNotificationError] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
+
+  const applyNotificationResponse = (response: { notifications?: any[]; unreadCount?: number }) => {
+    setNotifications(response.notifications || []);
+    setNotificationCount(response.unreadCount || 0);
+  };
+
+  const markAllNotificationsRead = async () => {
+    setNotificationActionBusy(true);
+    setNotificationError('');
+    try {
+      applyNotificationResponse(await apiRequest('/notifications/read-all', { method: 'POST', body: JSON.stringify({}) }));
+    } catch (error: any) {
+      setNotificationError(error.message || 'Could not mark notifications as read.');
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
+
+  const deleteNotification = async (notificationId: string) => {
+    setNotificationActionBusy(true);
+    setNotificationError('');
+    try {
+      applyNotificationResponse(await apiRequest(`/notifications/${encodeURIComponent(notificationId)}`, { method: 'DELETE' }));
+    } catch (error: any) {
+      setNotificationError(error.message || 'Could not delete this notification.');
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
+
+  const clearNotifications = async () => {
+    if (!notifications.length || !window.confirm('Delete all notifications from your list?')) return;
+    setNotificationActionBusy(true);
+    setNotificationError('');
+    try {
+      applyNotificationResponse(await apiRequest('/notifications', { method: 'DELETE' }));
+    } catch (error: any) {
+      setNotificationError(error.message || 'Could not delete notifications.');
+    } finally {
+      setNotificationActionBusy(false);
+    }
+  };
+
+  const openNotification = async (item: any) => {
+    setActiveTab(item.module || 'dashboard');
+    setNotificationsOpen(false);
+    if (!item.isRead) {
+      try {
+        applyNotificationResponse(await apiRequest(`/notifications/${encodeURIComponent(item.id)}/read`, { method: 'PATCH', body: JSON.stringify({}) }));
+      } catch { /* Opening the linked module should still work if read state cannot be saved. */ }
+    }
+  };
 
   // Live Asia/Manila clock
   useEffect(() => {
@@ -84,6 +140,9 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'stores-freezers', label: 'Stores & Freezers', icon: Store },
     { id: 'sales-reports', label: 'Sales & Reports', icon: FileText },
   ];
+  const visibleNavItems = isAdmin
+    ? navItems
+    : navItems.filter(item => item.id !== 'stores-freezers').map(item => item.id === 'sales-reports' ? { ...item, label: 'Daily Collection' } : item);
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm no-print">
@@ -156,7 +215,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
           {/* Primary Navigation Tabs */}
           <nav aria-label="Main modules" className="hidden xl:flex flex-1 max-w-4xl mx-6 items-center justify-evenly bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shadow-inner">
-            {navItems.map((item) => {
+            {visibleNavItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
@@ -185,17 +244,28 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 <Bell className="h-4 w-4" />
                 {notificationCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-rose-600 px-1 text-center text-[10px] font-bold text-white">{notificationCount > 9 ? '9+' : notificationCount}</span>}
               </button>
-              {notificationsOpen && <div className="absolute right-0 mt-2 w-[min(90vw,24rem)] max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl z-50">
-                <div className="flex items-center justify-between border-b px-4 py-3"><div><h3 className="text-sm font-bold text-slate-800">Staff Notifications</h3><p className="text-xs text-slate-500">Incoming bookings, stock, deliveries, and collections</p></div><button onClick={() => setNotificationsOpen(false)} className="text-sm text-slate-500">Close</button></div>
-                {notifications.length ? notifications.map(item => <button key={item.id} onClick={() => { setActiveTab(item.module || 'dashboard'); setNotificationsOpen(false); }} className="block w-full border-b px-4 py-3 text-left hover:bg-slate-50">
-                  <div className="flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.level === 'urgent' ? 'bg-rose-600' : item.level === 'warning' ? 'bg-amber-500' : 'bg-blue-400'}`} /><span className="text-sm font-semibold text-slate-800">{item.title}</span></div>
-                  <p className="mt-1 pl-4 text-xs text-slate-600">{item.message}</p>
-                  <p className="mt-1 pl-4 text-[10px] text-slate-400">{new Date(item.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</p>
-                </button>) : <p className="px-4 py-8 text-center text-sm text-slate-400">No notifications right now.</p>}
+              {notificationsOpen && <div className="absolute right-0 mt-2 w-[min(90vw,27rem)] max-h-[70vh] overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl z-50">
+                <div className="space-y-3 border-b px-4 py-3">
+                  <div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-bold text-slate-800">Staff Notifications</h3><p className="text-xs text-slate-500">Incoming bookings, stock, deliveries, and collections</p></div><button onClick={() => setNotificationsOpen(false)} className="text-sm text-slate-500 hover:text-slate-800">Close</button></div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => void markAllNotificationsRead()} disabled={notificationActionBusy || notificationCount === 0} className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"><Check className="h-3.5 w-3.5" />Mark all read</button>
+                    <button type="button" onClick={() => void clearNotifications()} disabled={notificationActionBusy || notifications.length === 0} className="flex items-center gap-1 rounded-lg border border-rose-200 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Clear all</button>
+                    <span className="ml-auto text-[11px] text-slate-500">{notificationCount} unread</span>
+                  </div>
+                  {notificationError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{notificationError}</p>}
+                </div>
+                {notifications.length ? notifications.map(item => <div key={item.id} className={`flex items-start gap-1 border-b px-2 py-2 last:border-0 ${item.isRead ? 'bg-white' : 'bg-blue-50/60'}`}>
+                  <button type="button" onClick={() => void openNotification(item)} className="min-w-0 flex-1 rounded-lg px-2 py-1 text-left hover:bg-slate-50">
+                    <div className="flex items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${item.isRead ? 'bg-slate-300' : item.level === 'urgent' ? 'bg-rose-600' : item.level === 'warning' ? 'bg-amber-500' : 'bg-blue-500'}`} /><span className={`text-sm text-slate-800 ${item.isRead ? 'font-medium' : 'font-bold'}`}>{item.title}</span></div>
+                    <p className="mt-1 pl-4 text-xs text-slate-600">{item.message}</p>
+                    <p className="mt-1 pl-4 text-[10px] text-slate-400">{new Date(item.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}</p>
+                  </button>
+                  <button type="button" onClick={() => void deleteNotification(item.id)} disabled={notificationActionBusy} title="Delete notification" aria-label={`Delete ${item.title} notification`} className="mt-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button>
+                </div>) : <p className="px-4 py-8 text-center text-sm text-slate-400">No notifications right now.</p>}
               </div>}
             </div>
             {/* Settings Gear Button */}
-            <button
+            {isAdmin && <button
               onClick={() => setActiveTab('settings')}
               title="Dealership & System Settings"
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-all shadow-sm ${
@@ -206,7 +276,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
             >
               <SettingsIcon className={`w-4 h-4 transition-transform duration-300 ${activeTab === 'settings' ? 'rotate-90 text-rose-600' : 'text-slate-500'}`} />
               <span className="hidden sm:inline text-xs">Settings</span>
-            </button>
+            </button>}
 
             {/* User Profile Dropdown */}
             <div className="relative" ref={menuRef}>
@@ -245,7 +315,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                     </div>
                   </div>
 
-                  <div className="py-1">
+                  {isAdmin && <div className="py-1">
                     <button
                       onClick={() => {
                         setShowUserMenu(false);
@@ -256,7 +326,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                       <SettingsIcon className="w-4 h-4 text-slate-400" />
                       Dealership & Staff Settings
                     </button>
-                  </div>
+                  </div>}
 
                   <div className="border-t border-slate-100 pt-1">
                     <button
@@ -278,7 +348,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
 
         {/* ─── Mobile Secondary Nav Strip ────────────────────────────────────── */}
         <nav aria-label="Main modules" className="grid grid-cols-2 sm:grid-cols-3 xl:hidden py-1.5 gap-1 border-t border-slate-100">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (

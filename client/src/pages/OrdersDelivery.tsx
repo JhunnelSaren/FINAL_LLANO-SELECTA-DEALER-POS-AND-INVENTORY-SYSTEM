@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ClipboardList, Package, Truck, Plus, Download, Search, X, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
-import { apiRequest } from '../utils/api';
+import { apiRequest, getAuthToken } from '../utils/api';
 import { formatPeso, formatDate, getStatusColor } from '../utils/formatters';
 import type { Booking, Product, Customer, StockReceiving, DeliveryRun } from '../types';
 
@@ -13,6 +13,7 @@ const subTabs = [
   { id: 'delivery', label: 'Delivery', icon: Truck },
 ] as const;
 type SubTab = typeof subTabs[number]['id'];
+export type OrdersDeliveryTab = SubTab;
 
 type DeliveryFormLine = {
   deliveryItemId: string;
@@ -133,7 +134,7 @@ function BookingsTab() {
 
   const handleExport = async () => {
     try {
-      const token = localStorage.getItem('llano_token');
+      const token = getAuthToken();
       const params = new URLSearchParams();
       if (fArea !== 'all') params.set('area', fArea);
       if (fStatus !== 'all') params.set('status', fStatus);
@@ -385,7 +386,7 @@ function PrepareLoadTab() {
     {showForm && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}><div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full" onClick={e => e.stopPropagation()}><div className="px-6 py-4 border-b flex justify-between"><h3 className="text-lg font-bold">Create {area} Delivery Run</h3><button onClick={() => setShowForm(false)}><X className="h-5 w-5 text-slate-400" /></button></div><div className="p-6 space-y-4"><p className="text-sm text-slate-600">Selected: <strong>{selectedBookings.length}</strong> booking(s) in {area}</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-semibold mb-1">Driver *</label><input value={driver} onChange={e => setDriver(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div><div><label className="block text-sm font-semibold mb-1">Loader 1 *</label><input value={loader1} onChange={e => setLoader1(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div><div><label className="block text-sm font-semibold mb-1">Loader 2 *</label><input value={loader2} onChange={e => setLoader2(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div></div></div><div className="px-6 py-4 border-t flex justify-end gap-3"><button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleCreateRun} disabled={submitting} className="px-6 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{submitting ? 'Creating…' : 'Create Run'}</button></div></div></div>}
   </div>;
 }
-function DeliveryTab() {
+function DeliveryTab({ onOpenReconciliation }: { onOpenReconciliation?: () => void }) {
   const { showToast } = useToast();
   const [runs, setRuns] = useState<DeliveryRun[]>([]);
   const [loading, setLoading] = useState(true);
@@ -437,7 +438,17 @@ function DeliveryTab() {
       const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
       return sum + Number(line.boQty) * Number(item.unitPrice);
     }, 0);
-    const totalBill = Math.max(0, grossProductBill - boDeduction) + Number(stop.customer?.currentBalance || 0);
+    const shortDeductionAmount = Number(stopForm.shortDeductionAmount);
+    const isValidMoney = (value: number) => Number.isFinite(value) && value >= 0 && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001;
+    if (stopForm.shortDeductionAmount === '' || !isValidMoney(shortDeductionAmount)) {
+      showToast('Enter a non-negative short total with up to two decimal places.', 'warning');
+      return;
+    }
+    if (shortDeductionAmount > Math.max(0, grossProductBill - boDeduction)) {
+      showToast('The short total cannot exceed the product bill after BO deductions.', 'warning');
+      return;
+    }
+    const totalBill = Math.max(0, grossProductBill - boDeduction - shortDeductionAmount) + Number(stop.customer?.currentBalance || 0);
     if (amountPaid > totalBill) { showToast('Amount collected cannot exceed the delivery bill plus the previous balance.', 'warning'); return; }
     if (amountPaid > 0 && stopForm.paymentMethod !== 'Cash' && !String(stopForm.paymentReference || '').trim()) {
       showToast(`Enter the ${stopForm.paymentMethod} payment reference.`, 'warning');
@@ -451,7 +462,7 @@ function DeliveryTab() {
     submissionLock.current = true;
     setSubmitting(true);
     try {
-      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName.trim(), paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, items: stopForm.items.map((line: DeliveryFormLine) => ({ id: line.deliveryItemId, acceptedQty: Number(line.acceptedQty), boRefusedQty: Number(line.boQty) })) }) });
+      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName.trim(), paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, shortDeductionAmount, items: stopForm.items.map((line: DeliveryFormLine) => ({ id: line.deliveryItemId, acceptedQty: Number(line.acceptedQty), boRefusedQty: Number(line.boQty) })) }) });
       showToast('Delivery, BO credit, receipt, and payment saved.'); setStopForm(null); await loadData();
     } catch (e: any) { showToast(e.message, 'error'); }
     finally { submissionLock.current = false; setSubmitting(false); }
@@ -468,6 +479,7 @@ function DeliveryTab() {
 
   return (
     <div className="space-y-4">
+      {onOpenReconciliation && <div className="flex justify-end"><button type="button" onClick={onOpenReconciliation} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Reconcile completed runs</button></div>}
       <div className="overflow-x-auto rounded-xl border bg-white">
         <table className="w-full text-sm">
           <thead className="border-b bg-slate-50"><tr><th className="px-4 py-3 text-left">Run #</th><th className="px-4 py-3 text-left">Area</th><th className="px-4 py-3 text-left">Driver</th><th className="px-4 py-3 text-center">Stops</th><th className="px-4 py-3 text-center">Status</th><th className="px-4 py-3 text-center">Actions</th></tr></thead>
@@ -499,7 +511,8 @@ function DeliveryTab() {
           const previousBalance = Number(stop.customer?.currentBalance || 0);
           const orderTotal = activeForm ? orderAmount(stopForm.items) : 0;
           const currentBoTotal = activeForm ? boAmount(stopForm.items) : 0;
-          const finalProductBill = Math.max(0, orderTotal - currentBoTotal);
+          const currentShortTotal = activeForm ? Number(stopForm.shortDeductionAmount) || 0 : 0;
+          const finalProductBill = Math.max(0, orderTotal - currentBoTotal - currentShortTotal);
           const totalBill = finalProductBill + previousBalance;
           const collected = activeForm && stopForm.amountPaid !== '' ? Number(stopForm.amountPaid) || 0 : 0;
           const clearedCollected = activeForm && stopForm.paymentMethod !== 'Check' ? collected : 0;
@@ -509,12 +522,20 @@ function DeliveryTab() {
             stopForm.items.find((line: DeliveryFormLine) => line.deliveryItemId === item.id),
           )).filter((error): error is string => Boolean(error)) : [];
           const invalidQuantity = quantityErrors.length > 0;
+          const invalidAdjustment = activeForm && (
+            stopForm.shortDeductionAmount === ''
+            || !Number.isFinite(Number(stopForm.shortDeductionAmount))
+            || Number(stopForm.shortDeductionAmount) < 0
+            || Math.abs(Number(stopForm.shortDeductionAmount) * 100 - Math.round(Number(stopForm.shortDeductionAmount) * 100)) >= 0.000001
+            || currentShortTotal > Math.max(0, orderTotal - currentBoTotal)
+          );
           const amountValid = activeForm
             && stopForm.amountPaid !== ''
             && Number.isFinite(Number(stopForm.amountPaid))
             && Number(stopForm.amountPaid) >= 0
             && Math.round(Number(stopForm.amountPaid) * 100) === Number(stopForm.amountPaid) * 100
-            && Number(stopForm.amountPaid) <= totalBill;
+            && Number(stopForm.amountPaid) <= totalBill
+            && !invalidAdjustment;
           const requiresPaymentReference = activeForm && collected > 0 && stopForm.paymentMethod !== 'Cash';
           const missingPaymentDetails = requiresPaymentReference && (
             !String(stopForm.paymentReference || '').trim()
@@ -524,6 +545,7 @@ function DeliveryTab() {
           const canSave = activeForm
             && !submitting
             && !invalidQuantity
+            && !invalidAdjustment
             && Boolean(String(stopForm.recipientName || '').trim())
             && ['Cash', 'GCash', 'Bank Transfer', 'Check'].includes(stopForm.paymentMethod)
             && Boolean(amountValid)
@@ -533,13 +555,13 @@ function DeliveryTab() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><span className="font-medium">#{index + 1}: {stop.storeName}</span><span className={`ml-2 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusColor(stop.status)}`}>{stop.status}</span></div>
               {selectedRun.status === 'In Transit' && (stop.status === 'Pending' || stop.status === 'In Progress') && <div className="flex gap-2">
-                <button type="button" disabled={submitting} onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Record Delivery</button>
+                <button type="button" disabled={submitting} onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, shortDeductionAmount: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Record Delivery</button>
                 <button type="button" disabled={submitting} onClick={() => markBackload(stop.id)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Failed / Backload</button>
               </div>}
             </div>
             {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700">Backload reason: {stop.notes || 'Delivery failed'}</p>}
-            {!activeForm && stopInvoice && <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3 text-xs sm:grid-cols-5">
-              <div>BO deduction: <strong>{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div><div>Total bill: <strong>{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div><div>Amount collected: <strong>{formatPeso((stopInvoice.payments || []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0))}</strong></div><div>Applied to balance: <strong>{formatPeso(Number(stopInvoice.totalPaid) || 0)}</strong></div><div>Balance: <strong>{formatPeso(Number(stopInvoice.balanceRemaining) || 0)}</strong></div>
+            {!activeForm && stopInvoice && <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3 text-xs sm:grid-cols-4 xl:grid-cols-7">
+              <div>Loaded total: <strong>{formatPeso(Number(stopInvoice.grossDeliveryAmount) || 0)}</strong></div><div>Intact returns: <strong>{formatPeso(Number(stopInvoice.intactReturnDeductionAmount) || 0)}</strong></div><div>BO deduction: <strong>{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div><div>Short deduction: <strong>{formatPeso(Number(stopInvoice.shortDeductionAmount) || 0)}</strong></div><div>Total bill: <strong>{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div><div>Amount collected: <strong>{formatPeso((stopInvoice.payments || []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0))}</strong></div><div>Balance: <strong>{formatPeso(Number(stopInvoice.balanceRemaining) || 0)}</strong></div>
             </div>}
 
             {activeForm && <div className="mt-3 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
@@ -574,6 +596,7 @@ function DeliveryTab() {
               <div className="grid grid-cols-1 gap-3 rounded-lg border bg-white p-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
                 <div>Product bill: <strong>{formatPeso(orderTotal)}</strong></div>
                 <div>BO deduction: <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
+                <div>Short deduction: <strong className="text-rose-700">−{formatPeso(currentShortTotal)}</strong></div>
                 <div>Final product bill: <strong>{formatPeso(finalProductBill)}</strong></div>
                 <div>Previous balance: <strong>{formatPeso(previousBalance)}</strong></div>
                 <div>Total bill: <strong className="text-rose-700">{formatPeso(totalBill)}</strong></div>
@@ -584,10 +607,12 @@ function DeliveryTab() {
                 <div><label className="mb-1 block text-sm font-semibold">Received by <span className="text-red-600">*</span></label><input required value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" /></div>
                 <div><label className="mb-1 block text-sm font-semibold">Payment method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option><option value="Check">Bank Check</option></select></div>
                 <div><label className="mb-1 block text-sm font-semibold">Amount collected (₱)</label><input type="number" min={0} max={totalBill} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: e.target.value === '' ? '' : Number(e.target.value) })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-describedby="payment-amount-help" /><p id="payment-amount-help" className="mt-1 text-xs text-slate-500">Enter 0 when no payment is collected.</p></div>
+                <div><label className="mb-1 block text-sm font-semibold">Short total (₱)</label><input type="number" min={0} max={Math.max(0, orderTotal - currentBoTotal)} step="0.01" value={stopForm.shortDeductionAmount} onChange={e => setStopForm({ ...stopForm, shortDeductionAmount: e.target.value === '' ? '' : Number(e.target.value) })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-describedby={`short-total-help-${stop.id}`} /><p id={`short-total-help-${stop.id}`} className="mt-1 text-xs text-slate-500">Applied after the BO quantity deduction.</p></div>
                 {requiresPaymentReference && <div><label className="mb-1 block text-sm font-semibold">Payment reference <span className="text-red-600">*</span></label><input required value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" />{stopForm.paymentMethod === 'Check' && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Bank name *</label><input required value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div><div><label className="mb-1 block text-xs font-semibold">Check date *</label><input required type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div></div>}</div>}
                 <div className="md:col-span-2 xl:col-span-3"><label className="mb-1 block text-sm font-semibold">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" placeholder="Optional delivery notes." /></div>
               </div>
               {amountValid === false && stopForm.amountPaid !== '' && <p role="alert" className="text-sm text-red-700">Enter a nonnegative amount up to the total bill of {formatPeso(totalBill)}.</p>}
+              {invalidAdjustment && <p role="alert" className="text-sm text-red-700">Enter a valid short total that does not exceed the product bill after BO deductions.</p>}
               {activeForm && !String(stopForm.recipientName || '').trim() && <p className="text-sm text-amber-800">Received by is required.</p>}
               {missingPaymentDetails && <p role="alert" className="text-sm text-amber-800">Complete the required payment reference and check details.</p>}
               <div className="flex flex-col-reverse justify-end gap-2 border-t pt-3 sm:flex-row">
@@ -605,15 +630,23 @@ function DeliveryTab() {
   );
 }
 // â”€â”€â”€ MAIN â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-export default function OrdersDelivery() {
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>('bookings');
+interface OrdersDeliveryProps {
+  activeSubTab?: OrdersDeliveryTab;
+  setActiveSubTab?: (tab: OrdersDeliveryTab) => void;
+  onOpenReconciliation?: () => void;
+}
+
+export default function OrdersDelivery({ activeSubTab: controlledTab, setActiveSubTab: controlledSetTab, onOpenReconciliation }: OrdersDeliveryProps = {}) {
+  const [internalTab, setInternalTab] = useState<SubTab>('bookings');
+  const activeSubTab = controlledTab ?? internalTab;
+  const setActiveSubTab = controlledSetTab ?? setInternalTab;
   return (
     <div>
       <div className="flex overflow-x-auto border-b mb-6">{subTabs.map(tab => { const Icon = tab.icon; const isActive = activeSubTab === tab.id; return (<button key={tab.id} onClick={() => setActiveSubTab(tab.id)} className={`flex items-center gap-2 px-4 py-3 text-sm font-semibold whitespace-nowrap border-b-2 transition ${isActive ? 'border-rose-600 text-rose-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}><Icon className="h-4 w-4" />{tab.label}</button>); })}</div>
       {activeSubTab === 'bookings' && <BookingsTab />}
       {activeSubTab === 'receiving' && <StockReceivingTab />}
       {activeSubTab === 'prepare' && <PrepareLoadTab />}
-      {activeSubTab === 'delivery' && <DeliveryTab />}
+      {activeSubTab === 'delivery' && <DeliveryTab onOpenReconciliation={onOpenReconciliation} />}
     </div>
   );
 }

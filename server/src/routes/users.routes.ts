@@ -17,7 +17,7 @@ const safeUserFields = {
   createdAt: true,
 } as const;
 
-router.get('/', authenticateToken, async (_req, res: Response) => {
+router.get('/', authenticateToken, requireRole('Admin'), async (_req, res: Response) => {
   try {
     res.json(await prisma.user.findMany({ select: safeUserFields, orderBy: { createdAt: 'desc' } }));
   } catch {
@@ -36,16 +36,23 @@ router.post('/', authenticateToken, requireRole('Admin'), async (req: Authentica
     const existing = await prisma.user.findFirst({ where: { OR: [{ username: normalizedUsername }, { email: normalizedEmail }] } });
     if (existing) return res.status(409).json({ error: 'Username or email is already in use.' });
 
+    const nextRole = role === 'Admin' ? 'Admin' : 'Staff';
+    const nextStatus = status === 'Inactive' ? 'Inactive' : 'Active';
+    if (nextRole === 'Staff' && nextStatus === 'Active') {
+      const activeStaff = await prisma.user.count({ where: { role: 'Staff', status: 'Active' } });
+      if (activeStaff >= 1) return res.status(409).json({ error: 'Only one active Staff account is allowed. Deactivate the current Staff account before activating another.' });
+    }
+
     const newUser = await prisma.user.create({
       data: {
         username: normalizedUsername,
         name: name.trim(),
         email: normalizedEmail,
-        role: role === 'Admin' ? 'Admin' : 'Staff',
+        role: nextRole,
         accessKey: randomUUID(),
         passwordHash: await bcrypt.hash(password.trim(), 10),
         phone: phone?.trim() || null,
-        status: status === 'Inactive' ? 'Inactive' : 'Active',
+        status: nextStatus,
       },
       select: safeUserFields,
     });
@@ -83,6 +90,10 @@ router.put('/:id', authenticateToken, requireRole('Admin'), async (req: Authenti
 
     const nextRole = role === undefined ? current.role : (role === 'Admin' ? 'Admin' : 'Staff');
     const nextStatus = status === undefined ? current.status : (status === 'Active' ? 'Active' : 'Inactive');
+    if (nextRole === 'Staff' && nextStatus === 'Active' && !(current.role === 'Staff' && current.status === 'Active')) {
+      const otherActiveStaff = await prisma.user.count({ where: { id: { not: id }, role: 'Staff', status: 'Active' } });
+      if (otherActiveStaff > 0) return res.status(409).json({ error: 'Only one active Staff account is allowed. Deactivate the current Staff account before activating another.' });
+    }
     if (current.role === 'Admin' && current.status === 'Active' && (nextRole !== 'Admin' || nextStatus !== 'Active')) {
       const otherActiveAdmins = await prisma.user.count({ where: { id: { not: id }, role: 'Admin', status: 'Active' } });
       if (otherActiveAdmins === 0) return res.status(400).json({ error: 'Keep at least one active Admin account.' });

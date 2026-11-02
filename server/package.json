@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
-    "prisma:safe-sync": "prisma db execute --file prisma/safe-additive-schema.sql",
+    "prisma:safe-sync": "tsx prisma/safe-sync.ts",
     "prisma:push": "npm run prisma:safe-sync",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:bootstrap": "tsx prisma/bootstrap.ts"

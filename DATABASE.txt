@@ -1,8 +1,9 @@
 -- =========================================================================
 -- LLANO SELECTA DEALER POS AND INVENTORY SYSTEM
--- FULL MASTER DATABASE SCHEMA & QUERIES FOR PGADMIN 4 / POSTGRESQL 18
+-- LEGACY POSTGRESQL REFERENCE — DO NOT RUN AGAINST THE LARAGON MYSQL DATABASE.
+-- The live app schema is server/prisma/schema.prisma; use npm run setup for MySQL.
 -- Database Name: llano_selecta_db
--- Connection: postgresql://postgres:032422@localhost:5432/llano_selecta_db
+-- The old PostgreSQL connection string was removed from this reference file.
 -- Locations Covered: Valencia City, Cabanglasan, San Fernando (Bukidnon)
 -- =========================================================================
 

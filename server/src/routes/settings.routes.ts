@@ -39,20 +39,20 @@ export interface LoginPageConfig {
 const defaultLoginPage: LoginPageConfig = {
   brandName: 'Llano Selecta',
   welcomeTitle: 'Welcome Back to Llano Selecta',
-  welcomeSubtitle: 'Sign in your account',
+  welcomeSubtitle: 'Sign in to continue to your dealer dashboard',
   logoUrl: '/llano-selecta-logo.png',
   logoIcon: 'home',
-  emailLabel: 'Your Email',
-  emailPlaceholder: 'Enter your email id here',
+  emailLabel: 'Username or Email',
+  emailPlaceholder: 'Enter your username or email',
   passwordLabel: 'Password',
   passwordPlaceholder: 'Enter your password here',
   loginButtonText: 'Login',
   rememberMeText: 'Remember me',
   forgotPasswordText: 'Forgot Password?',
-  badgeHeadline: 'Because Stays Should Feel Like Destinations',
-  badgeDescription: 'Find a perfect stay for you much awaited vacation!',
+  badgeHeadline: 'Cold Chain. Reliable Delivery.',
+  badgeDescription: 'Manage inventory, orders, routes, and freezer assets in one place.',
   themeStyle: 'modern-glass',
-  showSocialButtons: true,
+  showSocialButtons: false,
   socialGoogleText: 'Continue with Google',
   socialAppleText: 'Continue with Apple',
   footerText: "Don't have an account?",
@@ -61,18 +61,18 @@ const defaultLoginPage: LoginPageConfig = {
   slides: [
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
-      headline: 'Because Stays Should Feel Like Destinations',
-      description: 'Find a perfect stay for you much awaited vacation!',
+      headline: 'Cold Chain. Reliable Delivery.',
+      description: 'Manage inventory, orders, routes, and freezer assets in one place.',
     },
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
       headline: 'Llano Selecta Dealer & Cold Chain',
-      description: 'Fast, reliable ice cream distribution across Valencia, Cabanglasan & San Fernando.',
+      description: 'Reliable cold-chain ice cream distribution across Valencia, Cabanglasan, and San Fernando.',
     },
     {
       imageUrl: '/uploads/login-bg-modern.jpg',
       headline: 'Flawless Real-Time Inventory & Freezers',
-      description: 'Complete stock traceability, instant invoices, and route reconciliation.',
+      description: 'Track stock, route deliveries, invoices, and freezer assets from one dashboard.',
     },
   ],
 };
@@ -81,21 +81,27 @@ function readLoginPage(value?: string | null): LoginPageConfig {
   try {
     const parsed = value ? JSON.parse(value) : {};
     const slides = Array.isArray(parsed.slides) ? parsed.slides : [];
+    const currentText = (candidate: unknown, fallback: string, legacyValues?: string | string[]) => {
+      const isLegacy = Array.isArray(legacyValues)
+        ? legacyValues.includes(String(candidate))
+        : candidate === legacyValues;
+      return typeof candidate === 'string' && candidate.trim() && !isLegacy ? candidate : fallback;
+    };
     return {
       brandName: typeof parsed.brandName === 'string' && parsed.brandName.trim() ? parsed.brandName : defaultLoginPage.brandName,
       welcomeTitle: typeof parsed.welcomeTitle === 'string' && parsed.welcomeTitle.trim() ? parsed.welcomeTitle : defaultLoginPage.welcomeTitle,
-      welcomeSubtitle: typeof parsed.welcomeSubtitle === 'string' && parsed.welcomeSubtitle.trim() ? parsed.welcomeSubtitle : defaultLoginPage.welcomeSubtitle,
+      welcomeSubtitle: currentText(parsed.welcomeSubtitle, defaultLoginPage.welcomeSubtitle, 'Sign in your account'),
       logoUrl: typeof parsed.logoUrl === 'string' ? parsed.logoUrl : defaultLoginPage.logoUrl,
       logoIcon: typeof parsed.logoIcon === 'string' ? parsed.logoIcon : defaultLoginPage.logoIcon,
-      emailLabel: typeof parsed.emailLabel === 'string' && parsed.emailLabel.trim() ? parsed.emailLabel : defaultLoginPage.emailLabel,
-      emailPlaceholder: typeof parsed.emailPlaceholder === 'string' && parsed.emailPlaceholder.trim() ? parsed.emailPlaceholder : defaultLoginPage.emailPlaceholder,
+      emailLabel: currentText(parsed.emailLabel, defaultLoginPage.emailLabel, 'Your Email'),
+      emailPlaceholder: currentText(parsed.emailPlaceholder, defaultLoginPage.emailPlaceholder, 'Enter your email id here'),
       passwordLabel: typeof parsed.passwordLabel === 'string' && parsed.passwordLabel.trim() ? parsed.passwordLabel : defaultLoginPage.passwordLabel,
       passwordPlaceholder: typeof parsed.passwordPlaceholder === 'string' && parsed.passwordPlaceholder.trim() ? parsed.passwordPlaceholder : defaultLoginPage.passwordPlaceholder,
       loginButtonText: typeof parsed.loginButtonText === 'string' && parsed.loginButtonText.trim() ? parsed.loginButtonText : defaultLoginPage.loginButtonText,
       rememberMeText: typeof parsed.rememberMeText === 'string' && parsed.rememberMeText.trim() ? parsed.rememberMeText : defaultLoginPage.rememberMeText,
       forgotPasswordText: typeof parsed.forgotPasswordText === 'string' && parsed.forgotPasswordText.trim() ? parsed.forgotPasswordText : defaultLoginPage.forgotPasswordText,
-      badgeHeadline: typeof parsed.badgeHeadline === 'string' && parsed.badgeHeadline.trim() ? parsed.badgeHeadline : defaultLoginPage.badgeHeadline,
-      badgeDescription: typeof parsed.badgeDescription === 'string' && parsed.badgeDescription.trim() ? parsed.badgeDescription : defaultLoginPage.badgeDescription,
+      badgeHeadline: currentText(parsed.badgeHeadline, defaultLoginPage.badgeHeadline, 'Because Stays Should Feel Like Destinations'),
+      badgeDescription: currentText(parsed.badgeDescription, defaultLoginPage.badgeDescription, 'Find a perfect stay for you much awaited vacation!'),
       themeStyle: typeof parsed.themeStyle === 'string' ? parsed.themeStyle : defaultLoginPage.themeStyle,
       showSocialButtons: parsed.showSocialButtons !== undefined ? Boolean(parsed.showSocialButtons) : defaultLoginPage.showSocialButtons,
       socialGoogleText: typeof parsed.socialGoogleText === 'string' ? parsed.socialGoogleText : defaultLoginPage.socialGoogleText,
@@ -105,8 +111,15 @@ function readLoginPage(value?: string | null): LoginPageConfig {
       registerUrl: typeof parsed.registerUrl === 'string' ? parsed.registerUrl : defaultLoginPage.registerUrl,
       slides: Array.from({ length: 3 }, (_, index) => ({
         imageUrl: typeof slides[index]?.imageUrl === 'string' && slides[index].imageUrl.trim() ? slides[index].imageUrl : defaultLoginPage.slides[index].imageUrl,
-        headline: typeof slides[index]?.headline === 'string' && slides[index].headline.trim() ? slides[index].headline : defaultLoginPage.slides[index].headline,
-        description: typeof slides[index]?.description === 'string' && slides[index].description.trim() ? slides[index].description : defaultLoginPage.slides[index].description,
+        headline: currentText(slides[index]?.headline, defaultLoginPage.slides[index].headline, index === 0 ? 'Because Stays Should Feel Like Destinations' : undefined),
+        description: currentText(slides[index]?.description, defaultLoginPage.slides[index].description, index === 0
+          ? 'Find a perfect stay for you much awaited vacation!'
+          : index === 2
+            ? [
+                'Complete stock traceability, route deliveries, and instant offline/online transactions.',
+                'Complete stock traceability, instant invoices, and route reconciliation.',
+              ]
+            : undefined),
       })),
     };
   } catch {
@@ -188,7 +201,7 @@ router.post('/login-page/upload', authenticateToken, requireRole('Admin'), image
 });
 
 // GET /api/settings
-router.get('/', authenticateToken, async (_req, res: Response) => {
+router.get('/', authenticateToken, requireRole('Admin'), async (_req, res: Response) => {
   try {
     let settings = await prisma.systemSetting.findFirst();
     if (!settings) {
@@ -267,7 +280,7 @@ router.put('/', authenticateToken, requireRole('Admin'), async (req: Authenticat
 });
 
 // GET /api/settings/audit-logs
-router.get('/audit-logs', authenticateToken, async (_req, res: Response) => {
+router.get('/audit-logs', authenticateToken, requireRole('Admin'), async (_req, res: Response) => {
   try {
     const logs = await prisma.auditLog.findMany({
       orderBy: { timestamp: 'desc' },

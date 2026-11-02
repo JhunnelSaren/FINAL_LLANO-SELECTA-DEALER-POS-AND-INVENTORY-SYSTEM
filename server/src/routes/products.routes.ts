@@ -18,7 +18,7 @@ router.get('/', authenticateToken, async (_req, res: Response) => {
       sellingPrice: Number(p.sellingPrice),
       srp: Number(p.srp),
       availableStock: Math.max(0, p.stock - p.reservedStock),
-      isLowStock: p.stock <= p.minStock,
+      isLowStock: Math.max(0, p.stock - p.reservedStock) <= p.minStock,
     }));
 
     res.json(enriched);

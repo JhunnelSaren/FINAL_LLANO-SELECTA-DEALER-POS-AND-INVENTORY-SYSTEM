@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
+import { getAuthToken } from '../utils/api';
 import { formatPeso, formatDate, formatDateTime } from '../utils/formatters';
 
-// ─── TypeScript Interfaces ───────────────────────────────────────────────────
+// â”€â”€â”€ TypeScript Interfaces â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface Payment {
   id: string;
@@ -20,8 +21,11 @@ interface Invoice {
   customer: { id: string; name: string };
   deliveryRun?: { runNumber: string };
   totalAmount: number;
+  grossDeliveryAmount: number;
   billableProducts: number;
   boDeductionAmount: number;
+  shortDeductionAmount: number;
+  intactReturnDeductionAmount: number;
   priorBalance: number;
   paidAmount: number;
   amountCollected: number;
@@ -33,6 +37,7 @@ interface Invoice {
 
 interface ReconciliationRecord {
   id: string;
+  deliveryRunId?: string;
   deliveryRun: { runNumber: string; route: string; runDate: string };
   expectedCash: number;
   actualCash: number;
@@ -116,11 +121,12 @@ interface StaffReport {
 }
 
 type TabId = 'receipts' | 'collection' | 'quota' | 'reports';
+export type SalesReportsTab = TabId;
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function getToken(): string {
-  return localStorage.getItem('token') ?? '';
+  return getAuthToken() || '';
 }
 
 function authHeaders(): HeadersInit {
@@ -152,7 +158,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-// ─── Print Receipt ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Print Receipt â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
   const handlePrint = () => window.print();
@@ -182,8 +188,10 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
             </div>
             <hr className="my-2" />
             <div className="space-y-1 mb-3">
-              <div className="flex justify-between"><span>Products before BO deduction</span><span>{formatPeso(invoice.billableProducts + invoice.boDeductionAmount)}</span></div>
+              <div className="flex justify-between"><span>Loaded product total</span><span>{formatPeso(invoice.grossDeliveryAmount)}</span></div>
+              {invoice.shortDeductionAmount > 0 && <div className="flex justify-between text-amber-700"><span>Short / missing items</span><span>−{formatPeso(invoice.shortDeductionAmount)}</span></div>}
               {invoice.boDeductionAmount > 0 && <div className="flex justify-between text-rose-700"><span>BO returned / credited</span><span>−{formatPeso(invoice.boDeductionAmount)}</span></div>}
+              {invoice.intactReturnDeductionAmount > 0 && <div className="flex justify-between"><span>Intact items returned</span><span>−{formatPeso(invoice.intactReturnDeductionAmount)}</span></div>}
               <div className="flex justify-between"><span>Net product bill</span><span>{formatPeso(invoice.billableProducts)}</span></div>
               {invoice.priorBalance > 0 && <div className="flex justify-between"><span>Previous balance</span><span>{formatPeso(invoice.priorBalance)}</span></div>}
               <div className="flex justify-between font-semibold">
@@ -214,7 +222,7 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
           </div>
           <div className="flex gap-2 mt-4">
             <button onClick={handlePrint} className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded px-4 py-2 text-sm font-semibold">
-              🖨️ Print
+              Print
             </button>
             <button onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 rounded px-4 py-2 text-sm hover:bg-gray-50">
               Close
@@ -236,8 +244,10 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
           <p><strong>Customer:</strong> {invoice.customer.name}</p>
           {invoice.deliveryRun && <p><strong>Delivery Run:</strong> {invoice.deliveryRun.runNumber}</p>}
           <hr className="my-3" />
-          <div className="flex justify-between"><span>Products before BO deduction</span><span>{formatPeso(invoice.billableProducts + invoice.boDeductionAmount)}</span></div>
+          <div className="flex justify-between"><span>Loaded product total</span><span>{formatPeso(invoice.grossDeliveryAmount)}</span></div>
+          {invoice.shortDeductionAmount > 0 && <div className="flex justify-between text-amber-700"><span>Short / missing items</span><span>−{formatPeso(invoice.shortDeductionAmount)}</span></div>}
           {invoice.boDeductionAmount > 0 && <div className="flex justify-between text-rose-700"><span>BO returned / credited</span><span>−{formatPeso(invoice.boDeductionAmount)}</span></div>}
+          {invoice.intactReturnDeductionAmount > 0 && <div className="flex justify-between"><span>Intact items returned</span><span>−{formatPeso(invoice.intactReturnDeductionAmount)}</span></div>}
           <div className="flex justify-between"><span>Net product bill</span><span>{formatPeso(invoice.billableProducts)}</span></div>
           {invoice.priorBalance > 0 && <div className="flex justify-between"><span>Previous balance</span><span>{formatPeso(invoice.priorBalance)}</span></div>}
           <div className="flex justify-between font-semibold"><span>Total Bill</span><span>{formatPeso(invoice.totalAmount)}</span></div>
@@ -275,7 +285,7 @@ function PrintReceipt({ invoice, onClose }: { invoice: Invoice; onClose: () => v
   );
 }
 
-// ─── Payment Modal ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Payment Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function PaymentModal({
   invoice,
@@ -418,7 +428,7 @@ function PaymentModal({
   );
 }
 
-// ─── Sub-tab: Receipts & Customer Bills ──────────────────────────────────────
+// â”€â”€â”€ Sub-tab: Receipts & Customer Bills â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function ReceiptsTab() {
   const { showToast } = useToast();
@@ -449,8 +459,11 @@ function ReceiptsTab() {
         customer: { id: row.customerId, name: row.storeName },
         deliveryRun: row.deliveryStop?.deliveryRun,
         totalAmount: Number(row.netAmountDue),
+        grossDeliveryAmount: Number(row.grossDeliveryAmount) || Number(row.billableProductAmount || 0) + Number(row.boDeductionAmount || 0) + Number(row.shortDeductionAmount || 0) + Number(row.intactReturnDeductionAmount || 0),
         billableProducts: Number(row.billableProductAmount) || 0,
         boDeductionAmount: Number(row.boDeductionAmount) || 0,
+        shortDeductionAmount: Number(row.shortDeductionAmount) || 0,
+        intactReturnDeductionAmount: Number(row.intactReturnDeductionAmount) || 0,
         priorBalance: Number(row.priorBalance) || 0,
         paidAmount: Number(row.totalPaid),
         amountCollected: (row.payments ?? []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0),
@@ -503,7 +516,7 @@ function ReceiptsTab() {
           <div className="flex items-end">
             <button onClick={fetchInvoices}
               className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
-              🔍 Search
+              Search
             </button>
           </div>
         </div>
@@ -543,12 +556,12 @@ function ReceiptsTab() {
                         {inv.balance > 0 && (
                           <button onClick={() => setPaymentTarget(inv)}
                             className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-2 py-1 rounded font-medium transition-colors whitespace-nowrap">
-                            💳 Pay
+                            Pay
                           </button>
                         )}
                         <button onClick={() => setPrintTarget(inv)}
                           className="border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs px-2 py-1 rounded font-medium transition-colors whitespace-nowrap">
-                          🖨️ Print
+                          Print
                         </button>
                       </div>
                     </td>
@@ -570,15 +583,22 @@ function ReceiptsTab() {
   );
 }
 
-// ─── Sub-tab: Daily Collection ────────────────────────────────────────────────
+// â”€â”€â”€ Sub-tab: Daily Collection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function CollectionTab() {
   const { showToast } = useToast();
+  const { isAdmin } = useAuth();
   const [records, setRecords] = useState<ReconciliationRecord[]>([]);
+  const [readyRuns, setReadyRuns] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [route, setRoute] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [reconciliationDraft, setReconciliationDraft] = useState<any>(null);
+  const [actualCash, setActualCash] = useState('0');
+  const [reconciliationNotes, setReconciliationNotes] = useState('');
+  const [approveException, setApproveException] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -587,12 +607,17 @@ function CollectionTab() {
       if (route) params.set('route', route);
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
-      const res = await fetch(`/api/reconciliation?${params}`, { headers: authHeaders() });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+      const [res, runRes] = await Promise.all([
+        fetch(`/api/reconciliation?${params}`, { headers: authHeaders() }),
+        fetch('/api/delivery?status=Delivered', { headers: authHeaders() }),
+      ]);
+      const [data, runData] = await Promise.all([res.json(), runRes.json()]);
+      if (!res.ok) throw new Error(data.error || 'Failed to load reconciliation records.');
+      if (!runRes.ok) throw new Error(runData.error || 'Failed to load completed delivery runs.');
       const rows = Array.isArray(data) ? data : data.records ?? [];
-      setRecords(rows.map((row: any) => ({
+      const mappedRows: ReconciliationRecord[] = rows.map((row: any) => ({
         id: row.id,
+        deliveryRunId: row.deliveryRunId,
         deliveryRun: { runNumber: row.deliveryRun?.runNumber ?? '—', route: row.deliveryRun?.route ?? '—', runDate: row.deliveryRun?.deliveryDate ?? row.deliveryRun?.runDate ?? row.reconciliationDate },
         expectedCash: Number(row.expectedCash) || 0,
         actualCash: Number(row.actualCashCounted ?? row.actualCash) || 0,
@@ -600,9 +625,12 @@ function CollectionTab() {
         status: row.status ?? 'Draft',
         approvedBy: typeof row.approvedBy === 'string' && row.approvedBy ? { name: row.approvedBy } : row.approvedBy,
         createdAt: row.reconciliationDate ?? row.createdAt,
-      })));
-    } catch {
-      showToast('Failed to load reconciliation records', 'error');
+      }));
+      setRecords(mappedRows);
+      const runs = Array.isArray(runData) ? runData : runData.runs ?? [];
+      setReadyRuns(runs.filter((run: any) => run.status === 'Delivered' && !run.reconciliation));
+    } catch (error: any) {
+      showToast(error.message || 'Failed to load reconciliation records', 'error');
     } finally {
       setLoading(false);
     }
@@ -614,8 +642,86 @@ function CollectionTab() {
   const totalActual = records.reduce((s, r) => s + r.actualCash, 0);
   const totalVariance = records.reduce((s, r) => s + r.variance, 0);
 
+  const openReconciliation = async (runId: string) => {
+    try {
+      const response = await fetch(`/api/reconciliation/${runId}`, { headers: authHeaders() });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not open this run for reconciliation.');
+      setReconciliationDraft(data);
+      setActualCash(String(data.expectedCash ?? 0));
+      setReconciliationNotes('');
+      setApproveException(false);
+    } catch (error: any) {
+      showToast(error.message || 'Could not open this run for reconciliation.', 'error');
+    }
+  };
+
+  const submitReconciliation = async () => {
+    const countedCash = Number(actualCash);
+    if (!Number.isFinite(countedCash) || countedCash < 0) {
+      showToast('Enter a valid cash amount of zero or more.', 'error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const response = await fetch(`/api/reconciliation/${reconciliationDraft.runId}`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          actualCashCounted: countedCash,
+          discrepancyReason: reconciliationNotes.trim(),
+          notes: reconciliationNotes.trim(),
+          approveException: isAdmin && approveException,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not save reconciliation.');
+      showToast(data.status === 'Pending Approval'
+        ? 'Reconciliation saved and sent for Admin approval.'
+        : 'Run reconciled. Inventory and booking statuses are now up to date.');
+      setReconciliationDraft(null);
+      await fetchRecords();
+    } catch (error: any) {
+      showToast(error.message || 'Could not save reconciliation.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const approveReconciliation = async (recordId: string) => {
+    setSubmitting(true);
+    try {
+      const response = await fetch(`/api/reconciliation/${recordId}/approve`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not approve reconciliation.');
+      showToast('Reconciliation approved. Inventory and booking statuses are now up to date.');
+      await fetchRecords();
+    } catch (error: any) {
+      showToast(error.message || 'Could not approve reconciliation.', 'error');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
+      <div className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b bg-gray-50 px-4 py-3">
+          <h3 className="font-semibold text-gray-800">Completed runs awaiting reconciliation</h3>
+          <p className="mt-0.5 text-xs text-gray-500">Reconciliation closes out van stock, booking statuses, and cash collections.</p>
+        </div>
+        {readyRuns.length === 0 ? <p className="px-4 py-6 text-center text-sm text-gray-400">No completed runs are waiting for reconciliation.</p> : readyRuns.map(run => (
+          <div key={run.id} className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0">
+            <div><p className="font-semibold text-rose-700">{run.runNumber}</p><p className="text-xs text-gray-500">{run.area || run.route} · {formatDate(run.deliveryDate)} · {run.stops?.length || 0} stops</p></div>
+            <button type="button" onClick={() => openReconciliation(run.id)} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">Reconcile run</button>
+          </div>
+        ))}
+      </div>
+
       {/* Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -637,7 +743,7 @@ function CollectionTab() {
           <div className="flex items-end">
             <button onClick={fetchRecords}
               className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
-              🔍 Search
+              Search
             </button>
           </div>
         </div>
@@ -668,14 +774,14 @@ function CollectionTab() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Run #', 'Date', 'Route', 'Expected', 'Actual', 'Variance', 'Status', 'Approved By'].map(h => (
+                  {['Run #', 'Date', 'Route', 'Expected', 'Actual', 'Variance', 'Status', 'Approved By', 'Action'].map(h => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
                 {records.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center py-10 text-gray-400">No collection records found.</td></tr>
+                  <tr><td colSpan={9} className="text-center py-10 text-gray-400">No collection records found.</td></tr>
                 ) : records.map(rec => (
                   <tr key={rec.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-4 py-3 text-sm font-mono font-semibold text-rose-700">{rec.deliveryRun.runNumber}</td>
@@ -688,6 +794,7 @@ function CollectionTab() {
                     </td>
                     <td className="px-4 py-3"><StatusBadge status={rec.status} /></td>
                     <td className="px-4 py-3 text-sm text-gray-600">{rec.approvedBy?.name ?? '—'}</td>
+                    <td className="px-4 py-3">{isAdmin && rec.status === 'Pending Approval' && <button type="button" disabled={submitting} onClick={() => approveReconciliation(rec.id)} className="whitespace-nowrap rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Approve & finalize</button>}</td>
                   </tr>
                 ))}
               </tbody>
@@ -695,11 +802,36 @@ function CollectionTab() {
           </div>
         )}
       </div>
+
+      {reconciliationDraft && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !submitting && setReconciliationDraft(null)}>
+        <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={event => event.stopPropagation()}>
+          <div className="flex items-center justify-between border-b px-6 py-4"><div><h3 className="text-lg font-bold text-gray-900">Reconcile {reconciliationDraft.runNumber}</h3><p className="text-sm text-gray-500">{reconciliationDraft.run?.area || reconciliationDraft.run?.route}</p></div><button type="button" disabled={submitting} onClick={() => setReconciliationDraft(null)} className="text-gray-400 hover:text-gray-700">Close</button></div>
+          <div className="space-y-4 p-6">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {[
+                ['Expected cash', reconciliationDraft.summary?.expectedCash],
+                ['GCash', reconciliationDraft.summary?.totalGcash],
+                ['Bank transfer', reconciliationDraft.summary?.totalBankTransfer],
+                ['Cleared checks', reconciliationDraft.summary?.totalClearedChecks],
+                ['Pending checks', reconciliationDraft.summary?.totalPendingChecks],
+                ['Outstanding credit', reconciliationDraft.summary?.totalOutstandingCredit],
+              ].map(([label, value]) => <div key={String(label)} className="rounded-lg border bg-gray-50 p-3"><p className="text-xs text-gray-500">{label}</p><p className="mt-1 font-bold text-gray-800">{formatPeso(Number(value) || 0)}</p></div>)}
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Loaded {reconciliationDraft.summary?.totalLoadedUnits || 0} units · Delivered {reconciliationDraft.summary?.totalDeliveredAccepted || 0} · Intact returns {reconciliationDraft.summary?.totalIntactReturned || 0} · BO {reconciliationDraft.summary?.totalBoReturned || 0} · Missing {reconciliationDraft.summary?.totalMissingUnaccounted || 0}
+            </div>
+            <div><label className="mb-1 block text-sm font-semibold text-gray-700">Actual cash counted</label><input type="number" min={0} step="0.01" value={actualCash} onChange={event => setActualCash(event.target.value)} className="w-full rounded-lg border px-3 py-2" /><p className="mt-1 text-xs text-gray-500">Expected cash: {formatPeso(Number(reconciliationDraft.expectedCash) || 0)} · Variance: {formatPeso((Number(actualCash) || 0) - (Number(reconciliationDraft.expectedCash) || 0))}</p></div>
+            <div><label className="mb-1 block text-sm font-semibold text-gray-700">Notes or discrepancy reason</label><textarea value={reconciliationNotes} onChange={event => setReconciliationNotes(event.target.value)} rows={3} className="w-full rounded-lg border px-3 py-2" /></div>
+            {isAdmin && <label className="flex items-start gap-2 rounded-lg border p-3 text-sm text-gray-700"><input type="checkbox" checked={approveException} onChange={event => setApproveException(event.target.checked)} className="mt-0.5" /><span>Approve any cash or stock discrepancy now and finalize this run.</span></label>}
+          </div>
+          <div className="flex justify-end gap-2 border-t px-6 py-4"><button type="button" disabled={submitting} onClick={() => setReconciliationDraft(null)} className="rounded-lg border px-4 py-2 text-sm">Cancel</button><button type="button" disabled={submitting} onClick={submitReconciliation} className="rounded-lg bg-rose-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{submitting ? 'Saving…' : 'Save reconciliation'}</button></div>
+        </div>
+      </div>}
     </div>
   );
 }
 
-// ─── Sub-tab: Selecta POS Quota ───────────────────────────────────────────────
+// â”€â”€â”€ Sub-tab: Selecta POS Quota â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function QuotaTab() {
   const { isAdmin } = useAuth();
@@ -714,14 +846,6 @@ function QuotaTab() {
   const [targetAmount, setTargetAmount] = useState('');
   const [settingTarget, setSettingTarget] = useState(false);
   const [showTargetForm, setShowTargetForm] = useState(false);
-
-  // Add entry form
-  const [showEntryForm, setShowEntryForm] = useState(false);
-  const [entryAmount, setEntryAmount] = useState('');
-  const [entryReference, setEntryReference] = useState('');
-  const [entryDate, setEntryDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' }));
-  const [entryNotes, setEntryNotes] = useState('');
-  const [savingEntry, setSavingEntry] = useState(false);
 
   const fetchQuota = useCallback(async () => {
     setLoading(true);
@@ -759,31 +883,6 @@ function QuotaTab() {
       showToast('Failed to set target', 'error');
     } finally {
       setSettingTarget(false);
-    }
-  };
-
-  const handleAddEntry = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const amount = parseFloat(entryAmount);
-    if (isNaN(amount) || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
-    setSavingEntry(true);
-    try {
-      const res = await fetch('/api/quota/entry', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ monthYear: month, selectaPosRef: entryReference.trim(), amount, entryDate, remarks: entryNotes }),
-      });
-      if (!res.ok) throw new Error();
-      showToast('Entry added!', 'success');
-      setShowEntryForm(false);
-      setEntryAmount('');
-      setEntryReference('');
-      setEntryNotes('');
-      await fetchQuota();
-    } catch {
-      showToast('Failed to add entry', 'error');
-    } finally {
-      setSavingEntry(false);
     }
   };
 
@@ -861,10 +960,6 @@ function QuotaTab() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                    <button onClick={() => setShowEntryForm(v => !v)}
-                      className="bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
-                      + Add Entry
-                    </button>
                     {isAdmin && <button onClick={() => { setTargetAmount(String(quota.target)); setShowTargetForm(v => !v); }}
                       className="border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
                       Edit Monthly Target
@@ -884,42 +979,6 @@ function QuotaTab() {
                   </form>
                 )}
 
-                {showEntryForm && (
-                  <form onSubmit={handleAddEntry} className="mt-4 bg-rose-50 rounded-lg p-4 space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Selecta POS / Z-read Reference</label>
-                        <input type="text" value={entryReference} onChange={e => setEntryReference(e.target.value)} required
-                          placeholder="e.g. POS-ZREAD-2026-1029" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Amount (₱)</label>
-                        <input type="number" min="0.01" step="0.01" value={entryAmount} onChange={e => setEntryAmount(e.target.value)} required
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-gray-700 mb-1">Entry Date</label>
-                        <input type="date" value={entryDate} onChange={e => setEntryDate(e.target.value)} required
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-1">Notes (e.g., Unilever POS Entry #12345)</label>
-                      <input type="text" value={entryNotes} onChange={e => setEntryNotes(e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
-                    </div>
-                    <div className="flex gap-2">
-                      <button type="submit" disabled={savingEntry}
-                        className="bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
-                        {savingEntry ? 'Saving…' : 'Submit Entry'}
-                      </button>
-                      <button type="button" onClick={() => setShowEntryForm(false)}
-                        className="border border-gray-300 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
               </div>
 
               {/* Entry History */}
@@ -959,7 +1018,7 @@ function QuotaTab() {
   );
 }
 
-// ─── Sub-tab: Reports ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Sub-tab: Reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type ReportKey = 'sales' | 'fulfillment' | 'receivables' | 'cash' | 'freezer' | 'staff';
 
@@ -1061,7 +1120,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">📊 Sales Summary</h3>
+            <h3 className="font-semibold text-gray-800">Sales Summary</h3>
             <p className="text-xs text-gray-500 mt-0.5">Total revenue, top products, and customer breakdown.</p>
             <FilterRow k="sales" showRoute />
           </div>
@@ -1072,7 +1131,7 @@ function ReportsTab() {
             </button>
             <button onClick={() => exportReport('sales', 'sales')}
               className="border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg px-4 py-1.5 text-sm transition-colors">
-              📥 Export
+              Export
             </button>
           </div>
         </div>
@@ -1159,7 +1218,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">🚚 Delivery Fulfillment Rate</h3>
+            <h3 className="font-semibold text-gray-800">Delivery Fulfillment Rate</h3>
             <p className="text-xs text-gray-500 mt-0.5">Track shortages and delivery rates per product.</p>
             <FilterRow k="fulfillment" />
           </div>
@@ -1170,7 +1229,7 @@ function ReportsTab() {
             </button>
             <button onClick={() => exportReport('fulfillment', 'fulfillment')}
               className="border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg px-4 py-1.5 text-sm transition-colors">
-              📥 Export
+              Export
             </button>
           </div>
         </div>
@@ -1217,7 +1276,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">💰 Outstanding Receivables</h3>
+            <h3 className="font-semibold text-gray-800">Outstanding Receivables</h3>
             <p className="text-xs text-gray-500 mt-0.5">Customer balances sorted by oldest invoice.</p>
           </div>
           <div className="flex flex-col gap-2 items-end justify-start mt-2">
@@ -1227,7 +1286,7 @@ function ReportsTab() {
             </button>
             <button onClick={() => exportReport('receivables', 'receivables')}
               className="border border-gray-300 text-gray-600 hover:bg-gray-50 rounded-lg px-4 py-1.5 text-sm transition-colors">
-              📥 Export
+              Export
             </button>
           </div>
         </div>
@@ -1265,7 +1324,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">🔍 Cash Discrepancies</h3>
+            <h3 className="font-semibold text-gray-800">Cash Discrepancies</h3>
             <p className="text-xs text-gray-500 mt-0.5">Variance history across delivery runs.</p>
             <FilterRow k="cash" />
           </div>
@@ -1316,7 +1375,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">🧊 Freezer Compliance</h3>
+            <h3 className="font-semibold text-gray-800">Freezer Compliance</h3>
             <p className="text-xs text-gray-500 mt-0.5">Customers overdue for freezer verification.</p>
           </div>
           <div className="flex flex-col gap-2 items-end justify-start mt-2">
@@ -1366,7 +1425,7 @@ function ReportsTab() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
         <div className="flex flex-wrap justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-800">👷 Staff Performance</h3>
+            <h3 className="font-semibold text-gray-800">Staff Performance</h3>
             <p className="text-xs text-gray-500 mt-0.5">Bookings, deliveries, and collections per staff member.</p>
             <FilterRow k="staff" />
           </div>
@@ -1406,17 +1465,22 @@ function ReportsTab() {
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Main Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const TABS: { id: TabId; label: string; icon: string }[] = [
-  { id: 'receipts', label: 'Receipts & Customer Bills', icon: '🧾' },
-  { id: 'collection', label: 'Daily Collection', icon: '💵' },
-  { id: 'quota', label: 'Selecta POS Quota', icon: '🎯' },
-  { id: 'reports', label: 'Reports', icon: '📈' },
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'receipts', label: 'Receipts & Customer Bills' },
+  { id: 'collection', label: 'Daily Collection' },
+  { id: 'quota', label: 'Selecta POS Quota' },
+  { id: 'reports', label: 'Reports' },
 ];
 
-export default function SalesReports() {
-  const [activeTab, setActiveTab] = useState<TabId>('receipts');
+export default function SalesReports({ activeTab: controlledTab, setActiveTab: controlledSetTab }: { activeTab?: SalesReportsTab; setActiveTab?: (tab: SalesReportsTab) => void } = {}) {
+  const { isAdmin } = useAuth();
+  const [internalTab, setInternalTab] = useState<TabId>('receipts');
+  const requestedTab = controlledTab ?? internalTab;
+  const activeTab = isAdmin || requestedTab === 'collection' ? requestedTab : 'collection';
+  const setActiveTab = controlledSetTab ?? setInternalTab;
+  const visibleTabs = isAdmin ? TABS : TABS.filter(tab => tab.id === 'collection');
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -1430,7 +1494,7 @@ export default function SalesReports() {
         {/* Sub-tab Navigation */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <nav className="flex overflow-x-auto -mb-px gap-0" aria-label="Sales Report Tabs">
-            {TABS.map(tab => (
+            {visibleTabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -1440,7 +1504,6 @@ export default function SalesReports() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                 }`}
               >
-                <span>{tab.icon}</span>
                 <span>{tab.label}</span>
               </button>
             ))}

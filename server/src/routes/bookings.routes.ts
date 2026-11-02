@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+﻿import { Router, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import prisma from '../db.js';
 import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
@@ -90,7 +90,7 @@ router.get('/consolidated', authenticateToken, async (req, res: Response) => {
             productId: item.productId,
             productName: item.productName,
             category: item.category,
-            unitPrice: item.unitPrice,
+            unitPrice: Number(item.unitPrice),
             totalQuantity: 0,
             totalAmount: 0,
             storesCount: 0,
@@ -98,7 +98,7 @@ router.get('/consolidated', authenticateToken, async (req, res: Response) => {
         }
         const record = productSummaryMap.get(item.productId)!;
         record.totalQuantity += item.quantity;
-        record.totalAmount += item.lineTotal;
+        record.totalAmount += Number(item.lineTotal);
         record.storesCount += 1;
       }
     }
@@ -203,31 +203,42 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
     const booking = await prisma.$transaction(async (tx) => {
       const year = bookedAt.getFullYear();
       const prefix = `BK-${year}-`;
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${prefix}))`;
-      const existingNumbers = await tx.booking.findMany({
-        where: { bookingNumber: { startsWith: prefix } },
-        select: { bookingNumber: true },
-      });
-      const bookingNumber = nextBookingNumber(year, existingNumbers.map(({ bookingNumber }) => bookingNumber));
-      const created = await tx.booking.create({
-        data: {
-          id: randomUUID(),
-          bookingNumber,
-          customerId: customer.id,
-          storeName: customer.storeName,
-          route: customer.route || customer.area,
-          area: customer.area,
-          bookingDate: bookedAt,
-          bookerName: bookerName.trim(),
-          status: 'Booked',
-          subtotal: calculatedSubtotal,
-          notes: notes || null,
-          items: { create: validatedItems },
-        },
-        include: { items: true, customer: true },
-      });
-      await tx.customer.update({ where: { id: customer.id }, data: { lastOrderAt: bookedAt } });
-      return created;
+      const lockName = `booking_lock_${prefix}`;
+      const [lock] = await tx.$queryRaw<Array<{ locked: number | null }>>`
+        SELECT GET_LOCK(${lockName}, 5) AS locked
+      `;
+      if (Number(lock?.locked) !== 1) {
+        throw Object.assign(new Error('Booking numbers are busy. Please try again.'), { code: 'BOOKING_LOCK_TIMEOUT' });
+      }
+
+      try {
+        const existingNumbers = await tx.booking.findMany({
+          where: { bookingNumber: { startsWith: prefix } },
+          select: { bookingNumber: true },
+        });
+        const bookingNumber = nextBookingNumber(year, existingNumbers.map(({ bookingNumber }) => bookingNumber));
+        const created = await tx.booking.create({
+          data: {
+            id: randomUUID(),
+            bookingNumber,
+            customerId: customer.id,
+            storeName: customer.storeName,
+            route: customer.route || customer.area,
+            area: customer.area,
+            bookingDate: bookedAt,
+            bookerName: bookerName.trim(),
+            status: 'Booked',
+            subtotal: calculatedSubtotal,
+            notes: notes || null,
+            items: { create: validatedItems },
+          },
+          include: { items: true, customer: true },
+        });
+        await tx.customer.update({ where: { id: customer.id }, data: { lastOrderAt: bookedAt } });
+        return created;
+      } finally {
+        await tx.$queryRaw`SELECT RELEASE_LOCK(${lockName}) AS released`;
+      }
     });
 
     await recordAudit('Create Booking', 'Bookings', req.user?.name || 'Booker', {
@@ -238,6 +249,9 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 
     res.status(201).json(booking);
   } catch (err: any) {
+    if (err?.code === 'BOOKING_LOCK_TIMEOUT') {
+      return res.status(503).json({ error: err.message });
+    }
     if (err?.code === 'P2002') {
       return res.status(409).json({ error: 'A booking with this number already exists. Please try saving again.' });
     }
@@ -264,7 +278,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
       return res.status(403).json({ error: 'Cannot edit an already delivered booking without Dealer Admin authorization.' });
     }
 
-    let calculatedSubtotal = existing.subtotal;
+    let calculatedSubtotal = Number(existing.subtotal);
 
     if (items && Array.isArray(items)) {
       // Re-calculate lines

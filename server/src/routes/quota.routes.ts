@@ -6,7 +6,7 @@ import { manilaMonthYear } from '../business-time.js';
 const router = Router();
 
 // GET /api/quota (current month or query ?month=)
-router.get('/', authenticateToken, async (req, res: Response) => {
+router.get('/', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const currentMonth = manilaMonthYear();
   const monthYear = (req.query.month as string) || (req.query.monthYear as string) || currentMonth;
   try {
@@ -31,8 +31,8 @@ router.get('/', authenticateToken, async (req, res: Response) => {
       });
     }
 
-    const target = quota.targetAmount;
-    const achieved = quota.recordedSales;
+    const target = Number(quota.targetAmount);
+    const achieved = Number(quota.recordedSales);
     const percentage = target > 0 ? Number(((achieved / target) * 100).toFixed(1)) : 0;
     const remaining = Math.max(0, Number((target - achieved).toFixed(2)));
 
@@ -49,7 +49,7 @@ router.get('/', authenticateToken, async (req, res: Response) => {
 });
 
 // GET /api/quota/:monthYear
-router.get('/:monthYear', authenticateToken, async (req, res: Response) => {
+router.get('/:monthYear', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const { monthYear } = req.params;
   try {
     let quota = await prisma.selectaPosQuota.findUnique({
@@ -74,8 +74,8 @@ router.get('/:monthYear', authenticateToken, async (req, res: Response) => {
       });
     }
 
-    const target = quota.targetAmount;
-    const achieved = quota.recordedSales;
+    const target = Number(quota.targetAmount);
+    const achieved = Number(quota.recordedSales);
     const percentage = target > 0 ? Number(((achieved / target) * 100).toFixed(1)) : 0;
     const remaining = Math.max(0, Number((target - achieved).toFixed(2)));
 
@@ -122,7 +122,7 @@ router.post('/target', authenticateToken, requireRole('Admin'), async (req: Auth
 });
 
 // POST /api/quota/entry (Record official Selecta POS sales figure)
-router.post('/entry', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/entry', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { monthYear, selectaPosRef, amount, entryDate, remarks } = req.body;
   try {
     if (!monthYear || !selectaPosRef || amount === undefined) {
@@ -159,7 +159,7 @@ router.post('/entry', authenticateToken, async (req: AuthenticatedRequest, res: 
 
     // Update sum of confirmed Selecta entries
     const allEntries = await prisma.selectaPosQuotaEntry.findMany({ where: { quotaId: quota.id } });
-    const newTotal = allEntries.reduce((sum, e) => sum + e.amount, 0);
+    const newTotal = allEntries.reduce((sum, e) => sum + Number(e.amount), 0);
 
     const updatedQuota = await prisma.selectaPosQuota.update({
       where: { id: quota.id },
@@ -176,8 +176,8 @@ router.post('/entry', authenticateToken, async (req: AuthenticatedRequest, res: 
     res.status(201).json({
       entry,
       quota: updatedQuota,
-      percentage: Number(((newTotal / updatedQuota.targetAmount) * 100).toFixed(1)),
-      remaining: Math.max(0, updatedQuota.targetAmount - newTotal),
+      percentage: Number(((newTotal / Number(updatedQuota.targetAmount)) * 100).toFixed(1)),
+      remaining: Math.max(0, Number(updatedQuota.targetAmount) - newTotal),
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

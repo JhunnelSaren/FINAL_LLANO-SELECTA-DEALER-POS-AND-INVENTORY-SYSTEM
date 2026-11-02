@@ -1,6 +1,6 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
-import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
+import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 import { upload } from '../upload.js';
 import { deactivateDormantCustomers } from '../customers.service.js';
 
@@ -52,7 +52,7 @@ router.get('/', authenticateToken, async (req, res: Response) => {
 });
 
 // POST /api/customers
-router.post('/', authenticateToken, upload.single('storePhoto'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/', authenticateToken, requireRole('Admin'), upload.single('storePhoto'), async (req: AuthenticatedRequest, res: Response) => {
   const { id, storeName, ownerName, contact, area, subArea, purok, route, address, notes, freezerSerial, dateAdded } = req.body;
   try {
     if (!storeName || !area) {
@@ -116,7 +116,7 @@ router.post('/', authenticateToken, upload.single('storePhoto'), async (req: Aut
 });
 
 // PUT /api/customers/:id
-router.put('/:id', authenticateToken, upload.single('storePhoto'), async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id', authenticateToken, requireRole('Admin'), upload.single('storePhoto'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { storeName, ownerName, contact, area, subArea, purok, route, address, notes, status, freezerSerial, dateAdded } = req.body;
   try {
@@ -148,7 +148,7 @@ router.put('/:id', authenticateToken, upload.single('storePhoto'), async (req: A
 });
 
 // GET /api/customers/:id/history
-router.get('/:id/history', authenticateToken, async (req, res: Response) => {
+router.get('/:id/history', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const { id } = req.params;
   try {
     const customer = await prisma.customer.findUnique({

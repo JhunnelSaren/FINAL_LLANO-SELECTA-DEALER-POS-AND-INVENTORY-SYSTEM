@@ -12,7 +12,8 @@ async function main() {
   for (const account of accounts) {
     await prisma.user.upsert({
       where: { username: account.username },
-      update: { name: account.name, role: account.role, passwordHash: account.passwordHash, status: 'Active' },
+      // Re-running setup should never reset a user-managed password or status.
+      update: {},
       create: { id: account.username === 'admin' ? 'USR-ADMIN' : 'USR-STAFF', ...account, status: 'Active' },
     });
   }

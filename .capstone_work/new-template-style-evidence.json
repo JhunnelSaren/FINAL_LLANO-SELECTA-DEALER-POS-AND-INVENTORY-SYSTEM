@@ -1,0 +1,115 @@
+{
+  "input": "C:\\Users\\LENOVO I5\\Downloads\\CAPSTONE TEMPLATE (1).docx",
+  "fonts_by_char_count": {
+    "Arial": 7930
+  },
+  "direct_run_formatting_runs": 130,
+  "direct_paragraph_formatting_paragraphs": 142,
+  "heading_like_paragraphs_not_heading_style": [
+    {
+      "para_index": 5,
+      "text": "ACLC COLLEGE OF BUKIDNON",
+      "style": "Normal"
+    },
+    {
+      "para_index": 11,
+      "text": "\u201cYour Title\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 26,
+      "text": "\u201cResearcher Name\u201d ",
+      "style": "Normal"
+    },
+    {
+      "para_index": 27,
+      "text": "\u201cResearcher Name\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 28,
+      "text": "\u201cResearcher Name\u201d",
+      "style": "Normal"
+    },
+    {
+      "para_index": 91,
+      "text": "Related Literature",
+      "style": "Normal"
+    },
+    {
+      "para_index": 183,
+      "text": "ADD SCREENSHOT OF YOUR SYSTEM ARCHITECTURE",
+      "style": "Normal"
+    },
+    {
+      "para_index": 203,
+      "text": "ADD SCREENSHOT OF YOUR ERD",
+      "style": "Normal"
+    },
+    {
+      "para_index": 216,
+      "text": " Department of Information Technology                                ",
+      "style": "Normal"
+    }
+  ],
+  "examples": {
+    "direct_run_formatting": [
+      {
+        "para_index": 5,
+        "run_text": "ACLC COLLEGE OF BUKIDNON",
+        "style": "Normal"
+      },
+      {
+        "para_index": 8,
+        "run_text": "3535 TS. Fashion Bldg., Hagkol, Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 11,
+        "run_text": "\u201c",
+        "style": "Normal"
+      },
+      {
+        "para_index": 11,
+        "run_text": "Your",
+        "style": "Normal"
+      },
+      {
+        "para_index": 11,
+        "run_text": " ",
+        "style": "Normal"
+      }
+    ],
+    "direct_paragraph_formatting": [
+      {
+        "para_index": 13,
+        "text": "",
+        "style": "Normal"
+      },
+      {
+        "para_index": 14,
+        "text": "A Portfolio Presented to the Faculty of",
+        "style": "Normal"
+      },
+      {
+        "para_index": 15,
+        "text": "ACLC College of Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 16,
+        "text": "Valencia City, Bukidnon",
+        "style": "Normal"
+      },
+      {
+        "para_index": 17,
+        "text": "",
+        "style": "Normal"
+      }
+    ]
+  },
+  "notes": [
+    "Direct formatting is not always wrong, but it often causes inconsistent output when templates change.",
+    "Heading-like paragraphs not using Heading styles can break TOC and accessibility."
+  ]
+}

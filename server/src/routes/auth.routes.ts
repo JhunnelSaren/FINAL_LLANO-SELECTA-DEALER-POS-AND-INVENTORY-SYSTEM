@@ -20,6 +20,16 @@ router.post('/login', async (req, res: Response) => {
           { email: usernameOrEmail.trim().toLowerCase() },
         ],
       },
+      // A stale database may not have the optional accessKey column yet.
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        role: true,
+        passwordHash: true,
+        status: true,
+      },
     });
 
     if (!user) {
@@ -34,7 +44,11 @@ router.post('/login', async (req, res: Response) => {
     try { isMatch = await bcrypt.compare(password, user.passwordHash); } catch { /* legacy plaintext will be upgraded below */ }
     if (!isMatch && user.passwordHash === password) {
       isMatch = true;
-      await prisma.user.update({ where: { id: user.id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: await bcrypt.hash(password, 10) },
+        select: { id: true },
+      });
     }
     if (!isMatch) {
       return res.status(401).json({ error: 'Invalid password. Please check your credentials.' });
@@ -44,6 +58,7 @@ router.post('/login', async (req, res: Response) => {
     await prisma.user.update({
       where: { id: user.id },
       data: { lastLogin: new Date() },
+      select: { id: true },
     });
 
     const safeUser = {

@@ -1,12 +1,12 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
-import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
+import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 import { upload } from '../upload.js';
 
 const router = Router();
 
 // GET /api/freezers
-router.get('/', authenticateToken, async (req, res: Response) => {
+router.get('/', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
   const { status, area, search, customerId } = req.query;
   try {
     const where: any = {};
@@ -74,7 +74,7 @@ router.get('/', authenticateToken, async (req, res: Response) => {
 });
 
 // POST /api/freezers (Register Selecta freezer asset)
-router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { serialNumber, barcode, model, assignedStoreId, area, condition, notes, totalFee, productAllocation, processingFee, feePaymentRef } = req.body;
   try {
     if (!serialNumber || !barcode || !model) {
@@ -149,7 +149,7 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
 });
 
 // PUT /api/freezers/:id
-router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/:id', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { serialNumber, barcode, model, assignedStoreId, area, custodyDate, status, condition, notes, totalFee, productAllocation, processingFee, feePaymentStatus, feePaymentRef } = req.body;
   try {
@@ -233,7 +233,7 @@ router.put('/:id', authenticateToken, async (req: AuthenticatedRequest, res: Res
   }
 });
 
-router.post('/:id/transfer', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/transfer', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const customerId = String(req.body.customerId || '').trim();
   const reason = String(req.body.reason || '').trim();
@@ -257,7 +257,7 @@ router.post('/:id/transfer', authenticateToken, async (req: AuthenticatedRequest
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/:id/pull-out', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/pull-out', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'Enter why the freezer is being pulled out.' });
@@ -275,7 +275,7 @@ router.post('/:id/pull-out', authenticateToken, async (req: AuthenticatedRequest
   } catch (err: any) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/:id/damaged', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/damaged', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ error: 'Describe the freezer damage.' });
@@ -294,7 +294,7 @@ router.post('/:id/damaged', authenticateToken, async (req: AuthenticatedRequest,
 });
 
 // POST /api/freezers/:id/verify (Record monthly Timemark verification)
-router.post('/:id/verify', authenticateToken, upload.single('photo'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/verify', authenticateToken, requireRole('Admin'), upload.single('photo'), async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { verificationMonth, scannedAt, barcodeScanned, staffName, notes } = req.body;
   try {
@@ -367,7 +367,7 @@ router.post('/:id/verify', authenticateToken, upload.single('photo'), async (req
 });
 
 // PUT /api/freezers/verifications/:verId/review (Review/Reject verification photo)
-router.put('/verifications/:verId/review', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+router.put('/verifications/:verId/review', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
   const { verId } = req.params;
   const { status, reviewNotes } = req.body;
   try {
