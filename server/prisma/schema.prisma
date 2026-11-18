@@ -19,6 +19,8 @@ model User {
   phone        String?
   status       String    @default("Active") // "Active" | "Inactive"
   permissions  String?   @db.Text
+  resetCode       String?   @db.VarChar(64)
+  resetCodeExpiry DateTime?
   lastLogin    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -437,6 +439,7 @@ model SystemSetting {
   address                  String @db.Text   @default("Sayre Highway, Valencia City, Bukidnon")
   contactNumber            String   @default("0917-123-4567")
   receiptHeader            String   @default("Llano Selecta Authorized Dealer - Cold Chain Ice Cream Distribution")
+  headerSubtitle           String?  @db.Text
   defaultQuotaTarget       Decimal  @default(1000000.00) @db.Decimal(12, 2)
   freezerTotalFee          Decimal  @default(10000.00) @db.Decimal(12, 2)
   freezerProductAllocation Decimal  @default(9000.00) @db.Decimal(12, 2)
@@ -449,4 +452,27 @@ model SystemSetting {
   allowNegativeStock       Boolean  @default(false)
   loginPageConfig          String? @db.Text
   updatedAt                DateTime @updatedAt
+}
+
+model StockAdjustmentRequest {
+  id              String    @id @default(cuid()) @db.VarChar(64)
+  productId       String    @db.VarChar(191)
+  productName     String    @db.VarChar(191)
+  currentStock    Int
+  requestedChange Int
+  proposedStock   Int
+  reason          String    @db.VarChar(255)
+  notes           String?   @db.Text
+  staffId         String    @db.VarChar(64)
+  staffName       String    @db.VarChar(191)
+  status          String    @default("Pending") // "Pending", "Approved", "Rejected"
+  adminId         String?   @db.VarChar(64)
+  adminName       String?   @db.VarChar(191)
+  adminNotes      String?   @db.Text
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, createdAt])
+  @@map("stockadjustmentrequest")
 }

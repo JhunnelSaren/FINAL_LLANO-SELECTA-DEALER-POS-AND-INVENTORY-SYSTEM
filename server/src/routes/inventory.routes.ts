@@ -241,4 +241,274 @@ router.get('/export', authenticateToken, async (_req, res: Response) => {
   }
 });
 
+// GET /api/inventory/adjustment-requests (List pending and reviewed requests)
+router.get('/adjustment-requests', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const rows = (prisma as any).stockAdjustmentRequest
+      ? await (prisma as any).stockAdjustmentRequest.findMany({
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        })
+      : await prisma.$queryRaw<any[]>`
+          SELECT * FROM \`stockadjustmentrequest\`
+          ORDER BY \`createdAt\` DESC
+          LIMIT 100
+        `.catch(() => []);
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/inventory/adjustment-requests (Staff/Admin submits stock edit request for Admin permission)
+router.post('/adjustment-requests', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
+  const { productId, requestedChange, reason, notes } = req.body;
+  try {
+    if (!productId || requestedChange === undefined || !reason) {
+      return res.status(400).json({ error: 'Product ID, requested change quantity, and reason are required.' });
+    }
+
+    const change = Number(requestedChange);
+    if (!Number.isInteger(change) || change === 0) {
+      return res.status(400).json({ error: 'Adjustment change must be a non-zero whole number.' });
+    }
+
+    const product = await prisma.product.findUnique({ where: { id: String(productId) } });
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found.' });
+    }
+
+    const currentStock = product.stock;
+    const proposedStock = currentStock + change;
+    if (proposedStock < 0) {
+      return res.status(400).json({ error: `Cannot deduct ${Math.abs(change)} units. Current stock is ${currentStock}.` });
+    }
+
+    const requestId = `REQ-${Date.now().toString().slice(-6)}`;
+    const staffId = req.user?.id || 'staff';
+    const staffName = req.user?.name || 'Staff Member';
+
+    if ((prisma as any).stockAdjustmentRequest) {
+      await (prisma as any).stockAdjustmentRequest.create({
+        data: {
+          id: requestId,
+          productId: product.id,
+          productName: product.name,
+          currentStock,
+          requestedChange: change,
+          proposedStock,
+          reason: String(reason).trim(),
+          notes: notes ? String(notes).trim() : null,
+          staffId,
+          staffName,
+          status: 'Pending',
+        },
+      });
+    } else {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO \`stockadjustmentrequest\` (
+          \`id\`, \`productId\`, \`productName\`, \`currentStock\`, \`requestedChange\`,
+          \`proposedStock\`, \`reason\`, \`notes\`, \`staffId\`, \`staffName\`, \`status\`, \`createdAt\`, \`updatedAt\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', NOW(3), NOW(3))`,
+        requestId,
+        product.id,
+        product.name,
+        currentStock,
+        change,
+        proposedStock,
+        String(reason).trim(),
+        notes ? String(notes).trim() : null,
+        staffId,
+        staffName
+      );
+    }
+
+    await recordAudit('Request Stock Adjustment', 'Inventory', staffName, {
+      requestId,
+      productId: product.id,
+      productName: product.name,
+      currentStock,
+      requestedChange: change,
+      proposedStock,
+      reason: String(reason).trim(),
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Stock adjustment request submitted successfully for Admin approval.',
+      request: {
+        id: requestId,
+        productId: product.id,
+        productName: product.name,
+        currentStock,
+        requestedChange: change,
+        proposedStock,
+        reason: String(reason).trim(),
+        notes,
+        staffName,
+        status: 'Pending',
+        createdAt: new Date().toISOString(),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/inventory/adjustment-requests/:id/approve (Admin approves request & executes stock adjustment)
+router.post('/adjustment-requests/:id/approve', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { notes } = req.body || {};
+  try {
+    const rows = await prisma.$queryRaw<any[]>`
+      SELECT * FROM \`stockadjustmentrequest\` WHERE \`id\` = ${id} LIMIT 1
+    `;
+    const request = rows[0];
+    if (!request) {
+      return res.status(404).json({ error: 'Adjustment request not found.' });
+    }
+    if (request.status !== 'Pending') {
+      return res.status(400).json({ error: `This request is already ${request.status.toLowerCase()}.` });
+    }
+
+    const adminId = req.user?.id || 'admin';
+    const adminName = req.user?.name || 'Administrator';
+
+    const result = await prisma.$transaction(async (tx) => {
+      const product = await tx.product.findUnique({ where: { id: request.productId } });
+      if (!product) throw new Error('PRODUCT_NOT_FOUND');
+
+      const targetStock = product.stock + request.requestedChange;
+      if (targetStock < 0) {
+        throw new Error(`Adjustment would result in negative stock (${targetStock}).`);
+      }
+
+      const updatedProduct = await tx.product.update({
+        where: { id: product.id },
+        data: { stock: targetStock },
+      });
+
+      await tx.inventoryLedger.create({
+        data: {
+          productId: product.id,
+          productName: product.name,
+          movementType: 'Physical Adjustment',
+          changeQty: request.requestedChange,
+          runningSaleable: targetStock,
+          runningQuarantine: product.quarantineStock,
+          reference: request.id,
+          staffName: `${request.staffName} (Approved by ${adminName})`,
+          notes: `Admin Approved Adjustment: ${request.reason}${notes ? ` — ${notes}` : ''}`,
+        },
+      });
+
+      return { product, updatedProduct, targetStock };
+    });
+
+    if ((prisma as any).stockAdjustmentRequest) {
+      await (prisma as any).stockAdjustmentRequest.update({
+        where: { id },
+        data: {
+          status: 'Approved',
+          adminId,
+          adminName,
+          adminNotes: notes ? String(notes).trim() : 'Approved by Admin',
+          reviewedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.$executeRawUnsafe(
+        `UPDATE \`stockadjustmentrequest\`
+         SET \`status\` = 'Approved', \`adminId\` = ?, \`adminName\` = ?, \`adminNotes\` = ?, \`reviewedAt\` = NOW(3), \`updatedAt\` = NOW(3)
+         WHERE \`id\` = ?`,
+        adminId,
+        adminName,
+        notes ? String(notes).trim() : 'Approved by Admin',
+        id
+      );
+    }
+
+    await recordAudit('Approve Stock Adjustment', 'Inventory', adminName, {
+      requestId: id,
+      productId: request.productId,
+      productName: request.productName,
+      staffName: request.staffName,
+      changeQty: request.requestedChange,
+      oldStock: result.product.stock,
+      newStock: result.targetStock,
+    });
+
+    res.json({
+      success: true,
+      message: `Stock on Hand for "${request.productName}" updated to ${result.targetStock} units.`,
+      product: result.updatedProduct,
+    });
+  } catch (err: any) {
+    if (err.message === 'PRODUCT_NOT_FOUND') {
+      return res.status(404).json({ error: 'Product associated with this request was not found.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/inventory/adjustment-requests/:id/reject (Admin rejects request)
+router.post('/adjustment-requests/:id/reject', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+  const { id } = req.params;
+  const { reason, notes } = req.body || {};
+  try {
+    const request = (prisma as any).stockAdjustmentRequest
+      ? await (prisma as any).stockAdjustmentRequest.findUnique({ where: { id } })
+      : (await prisma.$queryRaw<any[]>`SELECT * FROM \`stockadjustmentrequest\` WHERE \`id\` = ${id} LIMIT 1`.catch(() => []))[0];
+
+    if (!request) {
+      return res.status(404).json({ error: 'Adjustment request not found.' });
+    }
+    if (request.status !== 'Pending') {
+      return res.status(400).json({ error: `This request has already been ${request.status.toLowerCase()}.` });
+    }
+
+    const adminId = req.user?.id || 'admin';
+    const adminName = req.user?.name || 'Administrator';
+    const rejectionReason = (reason || notes || 'Declined by Admin').trim();
+
+    if ((prisma as any).stockAdjustmentRequest) {
+      await (prisma as any).stockAdjustmentRequest.update({
+        where: { id },
+        data: {
+          status: 'Rejected',
+          adminId,
+          adminName,
+          adminNotes: rejectionReason,
+          reviewedAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.$executeRawUnsafe(
+        `UPDATE \`stockadjustmentrequest\`
+         SET \`status\` = 'Rejected', \`adminId\` = ?, \`adminName\` = ?, \`adminNotes\` = ?, \`reviewedAt\` = NOW(3), \`updatedAt\` = NOW(3)
+         WHERE \`id\` = ?`,
+        adminId,
+        adminName,
+        rejectionReason,
+        id
+      );
+    }
+
+    await recordAudit('Reject Stock Adjustment', 'Inventory', adminName, {
+      requestId: id,
+      productId: request.productId,
+      productName: request.productName,
+      staffName: request.staffName,
+      reason: rejectionReason,
+    });
+
+    res.json({
+      success: true,
+      message: 'Stock adjustment request rejected.',
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

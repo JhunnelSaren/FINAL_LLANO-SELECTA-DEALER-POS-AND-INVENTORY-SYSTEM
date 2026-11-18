@@ -117,10 +117,16 @@ router.put('/:id', authenticateToken, requireRole('Admin'), async (req: Authenti
   }
 });
 
-// POST /api/products/adjust (Inventory count adjustment)
+// POST /api/products/adjust (Inventory count adjustment - Admin only or approved permission)
 router.post('/adjust', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { productId, newPhysicalStock, reason, notes } = req.body;
   try {
+    if (req.user?.role !== 'Admin') {
+      return res.status(403).json({
+        error: 'Permission required: Staff members must request approval from an Admin before Stocks on Hand can be edited.',
+      });
+    }
+
     if (!productId || newPhysicalStock === undefined || !reason) {
       return res.status(400).json({ error: 'Product ID, new physical stock count, and reason are required.' });
     }

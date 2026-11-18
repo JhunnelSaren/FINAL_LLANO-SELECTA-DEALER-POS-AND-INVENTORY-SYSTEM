@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, Loader2, Home, Store, Snowflake, Building2, HelpCircle, X, Check, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Home, Store, Snowflake, Building2, HelpCircle, X, Check, ArrowRight, Mail, KeyRound, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export type LoginSlide = {
@@ -28,6 +28,9 @@ export type LoginPageConfig = {
   socialGoogleText: string;
   socialAppleText: string;
   footerText: string;
+  copyrightText?: string;
+  footerAddress?: string;
+  footerSubtext?: string;
   registerText: string;
   registerUrl: string;
   slides: LoginSlide[];
@@ -53,6 +56,9 @@ export const defaultLoginPage: LoginPageConfig = {
   socialGoogleText: 'Continue with Google',
   socialAppleText: 'Continue with Apple',
   footerText: "Don't have an account?",
+  copyrightText: '© 2026 Llano Selecta',
+  footerAddress: 'Sayre Hwy, Valencia City, Bukidnon',
+  footerSubtext: '',
   registerText: 'Register',
   registerUrl: '#register',
   slides: [
@@ -95,6 +101,134 @@ export const Login: React.FC = () => {
   const [showForgotModal, setShowForgotModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
   const [showQuickAccessModal, setShowQuickAccessModal] = useState(false);
+
+  // Password Recovery Flow States
+  const [forgotStep, setForgotStep] = useState<'email' | 'code' | 'newpass' | 'success'>('email');
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoverySuccessMsg, setRecoverySuccessMsg] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [devCode, setDevCode] = useState<string | null>(null);
+
+  const resetRecoveryState = () => {
+    setForgotStep('email');
+    setRecoveryEmail(usernameOrEmail.includes('@') ? usernameOrEmail : '');
+    setRecoveryCode('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowNewPassword(false);
+    setRecoveryLoading(false);
+    setRecoveryError('');
+    setRecoverySuccessMsg('');
+    setMaskedEmail('');
+    setDevCode(null);
+  };
+
+  const handleOpenForgot = () => {
+    resetRecoveryState();
+    setShowForgotModal(true);
+  };
+
+  const handleSendRecoveryCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryEmail.trim()) {
+      setRecoveryError('Please enter your registered Gmail or email address.');
+      return;
+    }
+    setRecoveryError('');
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoveryEmail.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send recovery code.');
+      setMaskedEmail(data.maskedEmail || recoveryEmail);
+      if (data.devCode) setDevCode(data.devCode);
+      setRecoverySuccessMsg(data.message || 'Verification code sent to your email.');
+      setForgotStep('code');
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Failed to request recovery code.');
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryCode.trim()) {
+      setRecoveryError('Please enter the 6-digit verification code.');
+      return;
+    }
+    setRecoveryError('');
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch('/api/auth/verify-reset-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoveryEmail.trim(), code: recoveryCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Verification code is invalid or expired.');
+      setRecoverySuccessMsg('Code verified. Set your new password below.');
+      setForgotStep('newpass');
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Verification failed.');
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword) {
+      setRecoveryError('Please enter a new password.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setRecoveryError('Password must be at least 6 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setRecoveryError('Passwords do not match.');
+      return;
+    }
+    setRecoveryError('');
+    setRecoveryLoading(true);
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: recoveryEmail.trim(),
+          code: recoveryCode.trim(),
+          newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password.');
+      setRecoverySuccessMsg(data.message || 'Password reset successfully!');
+      setForgotStep('success');
+    } catch (err: any) {
+      setRecoveryError(err.message || 'Failed to reset password.');
+    } finally {
+      setRecoveryLoading(false);
+    }
+  };
+
+  const handleFinishRecovery = () => {
+    setShowForgotModal(false);
+    setUsernameOrEmail(recoveryEmail);
+    setPassword('');
+    setError('');
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -231,13 +365,10 @@ export const Login: React.FC = () => {
 
       {/* Main Container Layout */}
       <div className="relative z-10 flex min-h-screen w-full flex-col justify-between p-4 sm:p-8 lg:p-12">
-        {/* Top bar (Optional small status/time or dealer banner) */}
+        {/* Top bar */}
         <div className="flex items-center justify-between">
           <div />
-          <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/90 px-4 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Dealer Operations · Staff Sign-in
-          </div>
+          <div />
         </div>
 
         {/* Content Row: Bottom Left Badge & Right Frosted Glass Modal */}
@@ -379,7 +510,7 @@ export const Login: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => setShowForgotModal(true)}
+                    onClick={handleOpenForgot}
                     className="font-medium text-rose-700 hover:text-rose-800 hover:underline transition"
                   >
                     {loginPage.forgotPasswordText}
@@ -436,43 +567,286 @@ export const Login: React.FC = () => {
 
         {/* Footer / Copyright */}
         <div className="flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2 pt-4 border-t border-slate-200">
-          <p>© {new Date().getFullYear()} {loginPage.brandName} · Llano Dealer Operations</p>
-          <span>Sayre Hwy, Valencia City, Bukidnon</span>
+          <p>{loginPage.copyrightText || `© 2026 ${loginPage.brandName}`}</p>
+          <div className="text-center sm:text-right">
+            <span>{loginPage.footerAddress || 'Sayre Hwy, Valencia City, Bukidnon'}</span>
+            {loginPage.footerSubtext && (
+              <p className="text-[10px] text-slate-400 mt-0.5">{loginPage.footerSubtext}</p>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* MODAL 1: Forgot Password */}
+      {/* MODAL 1: Password Recovery via Gmail / Email */}
       {showForgotModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-[fadeIn_.2s_ease-out]">
-          <div className="w-full max-w-md rounded-2xl border border-white/30 bg-white/95 p-6 shadow-2xl backdrop-blur-xl">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-base font-bold text-slate-900">Reset Your Password</h3>
+          <div className="w-full max-w-md rounded-2xl border border-white/40 bg-white/95 p-6 sm:p-7 shadow-2xl backdrop-blur-xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
+                  <KeyRound className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 leading-tight">Password Recovery</h3>
+                  <p className="text-[11px] text-slate-500">Recover using your registered Gmail or email</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowForgotModal(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-3 py-4 text-sm text-slate-600">
-              <p>For security, dealer access passwords are authenticated by the Dealership Administrator.</p>
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-1">
-                <p className="text-xs font-semibold text-slate-800">Dealer Admin Contact:</p>
-                <p className="text-xs text-slate-600">Sayre Highway, Valencia City, Bukidnon</p>
-                <p className="text-xs text-slate-600">Mobile: 0917-123-4567 / 0917-000-0001</p>
-                <p className="text-xs text-slate-600">Email: admin@selecta.com</p>
+
+            {/* Step Progress Pills */}
+            <div className="my-4 flex items-center justify-between gap-1 text-[11px] font-semibold text-slate-400 border-b border-slate-100 pb-3">
+              <span className={`flex items-center gap-1 ${forgotStep === 'email' ? 'text-rose-600 font-bold' : ''}`}>
+                1. Email
+              </span>
+              <span>&rarr;</span>
+              <span className={`flex items-center gap-1 ${forgotStep === 'code' ? 'text-rose-600 font-bold' : ''}`}>
+                2. Verify Code
+              </span>
+              <span>&rarr;</span>
+              <span className={`flex items-center gap-1 ${forgotStep === 'newpass' ? 'text-rose-600 font-bold' : ''}`}>
+                3. New Password
+              </span>
+            </div>
+
+            {/* Error & Info Alerts */}
+            {recoveryError && (
+              <div role="alert" className="mb-3.5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700">
+                {recoveryError}
               </div>
-            </div>
-            <div className="flex justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setShowForgotModal(false)}
-                className="rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 transition"
-              >
-                Got it
-              </button>
-            </div>
+            )}
+            {recoverySuccessMsg && forgotStep !== 'success' && (
+              <div className="mb-3.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                {recoverySuccessMsg}
+              </div>
+            )}
+
+            {/* STEP 1: Enter Email / Gmail */}
+            {forgotStep === 'email' && (
+              <form onSubmit={handleSendRecoveryCode} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Your Gmail or Registered Email Address
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      autoFocus
+                      value={recoveryEmail}
+                      onChange={(e) => setRecoveryEmail(e.target.value)}
+                      placeholder="e.g. staff@selecta.com or username"
+                      disabled={recoveryLoading}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 pl-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    We will dispatch a 6-digit verification code to this address for secure account recovery.
+                  </p>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="flex-1 rounded-xl border border-slate-300 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 transition disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20"
+                  >
+                    {recoveryLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Sending Code...</span>
+                      </>
+                    ) : (
+                      <span>Send Recovery Code &rarr;</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 2: Enter 6-digit Code */}
+            {forgotStep === 'code' && (
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Enter 6-Digit Verification Code
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    maxLength={6}
+                    value={recoveryCode}
+                    onChange={(e) => setRecoveryCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    disabled={recoveryLoading}
+                    className="w-full text-center tracking-[0.4em] font-mono text-2xl font-black rounded-xl border border-slate-300 bg-white py-3 text-slate-800 placeholder:text-slate-300 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    Check your Gmail inbox or spam folder for the code sent to <strong>{maskedEmail}</strong>.
+                  </p>
+                  {devCode && (
+                    <div className="mt-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setRecoveryCode(devCode)}
+                        className="inline-flex items-center gap-1 text-[11px] bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-2.5 py-1 font-mono font-semibold hover:bg-amber-100 transition cursor-pointer"
+                      >
+                        Demo/Offline Code: <strong className="underline">{devCode}</strong> (Click to auto-fill)
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setForgotStep('email')}
+                    className="text-slate-500 hover:text-slate-800 transition"
+                  >
+                    &larr; Change Email
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSendRecoveryCode}
+                    disabled={recoveryLoading}
+                    className="font-medium text-rose-600 hover:text-rose-700 hover:underline flex items-center gap-1"
+                  >
+                    <RefreshCw className="h-3 w-3" /> Resend Code
+                  </button>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="flex-1 rounded-xl border border-slate-300 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading || recoveryCode.length < 6}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 transition disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20"
+                  >
+                    {recoveryLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Verifying...</span>
+                      </>
+                    ) : (
+                      <span>Verify Code &rarr;</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 3: Enter New Password */}
+            {forgotStep === 'newpass' && (
+              <form onSubmit={handleResetPassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    New Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      autoFocus
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Enter minimum 6 characters"
+                      disabled={recoveryLoading}
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 pr-10 text-sm text-slate-900 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((p) => !p)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                    >
+                      {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type={showNewPassword ? 'text' : 'password'}
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-type new password"
+                    disabled={recoveryLoading}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotModal(false)}
+                    className="flex-1 rounded-xl border border-slate-300 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={recoveryLoading || !newPassword || newPassword !== confirmPassword}
+                    className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-semibold text-white hover:bg-rose-700 transition disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20"
+                  >
+                    {recoveryLoading ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <span>Reset Password</span>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 4: Success confirmation */}
+            {forgotStep === 'success' && (
+              <div className="text-center py-4 space-y-3">
+                <div className="flex justify-center">
+                  <CheckCircle2 className="h-14 w-14 text-emerald-500 animate-bounce" />
+                </div>
+                <h4 className="text-lg font-bold text-slate-900">Password Reset Complete!</h4>
+                <p className="text-xs text-slate-600 max-w-xs mx-auto">
+                  Your account password has been updated. You can now log in using your new credentials.
+                </p>
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleFinishRecovery}
+                    className="w-full rounded-xl bg-rose-600 py-3 text-xs font-bold text-white hover:bg-rose-700 transition shadow-lg shadow-rose-600/20"
+                  >
+                    Sign In Now &rarr;
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

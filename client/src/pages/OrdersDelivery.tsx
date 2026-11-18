@@ -18,20 +18,16 @@ export type OrdersDeliveryTab = SubTab;
 type DeliveryFormLine = {
   deliveryItemId: string;
   acceptedQty: number | string;
-  boQty: number | string;
 };
 
 function getDeliveryQuantityError(productName: string, loadedQty: number, line?: DeliveryFormLine): string | null {
-  if (!line) return `${productName}: enter accepted and BO damaged quantities.`;
-  const values = [['accepted', line.acceptedQty], ['BO damaged', line.boQty]] as const;
-  for (const [label, rawValue] of values) {
-    if (rawValue === '' || !Number.isSafeInteger(Number(rawValue)) || Number(rawValue) < 0) {
-      return `${productName}: ${label} quantity must be a whole number of units and cannot be negative.`;
-    }
+  if (!line) return `${productName}: enter accepted quantity.`;
+  const rawValue = line.acceptedQty;
+  if (rawValue === '' || !Number.isSafeInteger(Number(rawValue)) || Number(rawValue) < 0) {
+    return `${productName}: accepted quantity must be a whole number of units and cannot be negative.`;
   }
-  const [accepted, boDamaged] = values.map(([, value]) => Number(value));
+  const accepted = Number(rawValue);
   if (accepted > loadedQty) return `${productName}: accepted quantity ${accepted} exceeds loaded quantity ${loadedQty}.`;
-  if (boDamaged > accepted) return `${productName}: BO damaged quantity ${boDamaged} cannot exceed accepted quantity ${accepted}.`;
   return null;
 }
 
@@ -343,7 +339,7 @@ function PrepareLoadTab() {
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedBookings, setSelectedBookings] = useState<string[]>([]);
-  const [area, setArea] = useState('');
+  const [area, setArea] = useState('Valencia');
   const [driver, setDriver] = useState('');
   const [loader1, setLoader1] = useState('');
   const [loader2, setLoader2] = useState('');
@@ -380,7 +376,7 @@ function PrepareLoadTab() {
   const readyRuns = runs.filter(run => run.status === 'Draft' || run.status === 'Prepared');
 
   return <div className="space-y-4">
-    <div className="bg-white rounded-xl border p-4 flex flex-wrap items-end gap-3"><div><label className="block text-xs font-semibold text-slate-600 mb-1">Delivery area</label><select value={area} onChange={e => { setArea(e.target.value); setSelectedBookings([]); }} className="border rounded-lg px-3 py-2 text-sm"><option value="">Select area</option><option>Valencia</option><option>Cabanglasan</option><option>San Fernando</option></select></div><div className="flex-1 text-sm text-slate-600">{bookings.length} unassigned booking(s) {area ? `for ${area}` : ''}</div><button disabled={!area} onClick={() => setShowForm(true)} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"><Plus className="inline h-4 w-4 mr-1" />Create Delivery Run</button></div>
+    <div className="bg-white rounded-xl border p-4 flex flex-wrap items-end gap-3"><div><label className="block text-xs font-semibold text-slate-600 mb-1">Delivery area</label><select value={area} onChange={e => { setArea(e.target.value); setSelectedBookings([]); }} className="border rounded-lg px-3 py-2 text-sm font-medium"><option value="Valencia">Valencia</option><option value="Cabanglasan">Cabanglasan</option><option value="San Fernando">San Fernando</option></select></div><div className="flex-1 text-sm text-slate-600">{bookings.length} unassigned booking(s) {area ? `for ${area}` : ''}</div><button disabled={!area} onClick={() => setShowForm(true)} className="bg-rose-600 text-white px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"><Plus className="inline h-4 w-4 mr-1" />Create Delivery Run</button></div>
     <div className="bg-white rounded-xl border overflow-x-auto"><div className="px-4 py-3 border-b bg-slate-50 font-semibold text-sm">Bookings ready for a run{area ? ` · ${area}` : ''}</div><table className="w-full text-sm"><thead className="bg-slate-50 border-b"><tr><th className="px-4 py-2 w-10"><input type="checkbox" checked={bookings.length > 0 && selectedBookings.length === bookings.length} onChange={e => setSelectedBookings(e.target.checked ? bookings.map(b => b.id) : [])} /></th><th className="text-left px-4 py-2">Booking #</th><th className="text-left px-4 py-2">Store / Customer</th><th className="text-left px-4 py-2">Area · Lugar · Purok</th><th className="text-right px-4 py-2">Total</th></tr></thead><tbody>{loading ? <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Loading bookings…</td></tr> : bookings.length ? bookings.map(booking => <tr key={booking.id} className="border-b hover:bg-slate-50 cursor-pointer" onClick={() => toggleBooking(booking.id)}><td className="px-4 py-2"><input type="checkbox" checked={selectedBookings.includes(booking.id)} readOnly /></td><td className="px-4 py-2 font-medium text-rose-700">{booking.bookingNumber}</td><td className="px-4 py-2">{booking.storeName} · {booking.customer?.ownerName || ''}</td><td className="px-4 py-2">{[booking.area, booking.customer?.subArea, booking.customer?.purok].filter(Boolean).join(' · ')}</td><td className="px-4 py-2 text-right font-semibold">{formatPeso(booking.subtotal)}</td></tr>) : <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Select an area to see its booked stores and customers.</td></tr>}</tbody></table></div>
     {readyRuns.length > 0 && <div className="bg-white rounded-xl border"><div className="px-4 py-3 border-b bg-amber-50 font-semibold text-sm text-amber-800">Runs ready to dispatch</div>{readyRuns.map(run => <div key={run.id} className="px-4 py-3 border-b flex items-center justify-between"><div><span className="font-medium text-rose-700">{run.runNumber}</span><span className="ml-3 text-slate-600">{run.area || run.route} · {run.driver}</span><span className="ml-2 text-sm text-slate-500">({run.stops?.length || 0} stops)</span></div><button onClick={() => handleDispatch(run.id)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold">Dispatch</button></div>)}</div>}
     {showForm && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowForm(false)}><div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full" onClick={e => e.stopPropagation()}><div className="px-6 py-4 border-b flex justify-between"><h3 className="text-lg font-bold">Create {area} Delivery Run</h3><button onClick={() => setShowForm(false)}><X className="h-5 w-5 text-slate-400" /></button></div><div className="p-6 space-y-4"><p className="text-sm text-slate-600">Selected: <strong>{selectedBookings.length}</strong> booking(s) in {area}</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-sm font-semibold mb-1">Driver *</label><input value={driver} onChange={e => setDriver(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div><div><label className="block text-sm font-semibold mb-1">Loader 1 *</label><input value={loader1} onChange={e => setLoader1(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div><div><label className="block text-sm font-semibold mb-1">Loader 2 *</label><input value={loader2} onChange={e => setLoader2(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" /></div></div></div><div className="px-6 py-4 border-t flex justify-end gap-3"><button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg text-sm">Cancel</button><button onClick={handleCreateRun} disabled={submitting} className="px-6 py-2 bg-rose-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">{submitting ? 'Creating…' : 'Create Run'}</button></div></div></div>}
@@ -420,52 +416,44 @@ function DeliveryTab({ onOpenReconciliation }: { onOpenReconciliation?: () => vo
     )).filter(Boolean);
     if (quantityErrors.length) { showToast(quantityErrors[0]!, 'warning'); return; }
     if (!String(stopForm.recipientName || '').trim()) { showToast('Enter who received the delivery.', 'warning'); return; }
-    if (!['Cash', 'GCash', 'Bank Transfer', 'Check'].includes(stopForm.paymentMethod)) {
-      showToast('Choose a valid payment method.', 'warning');
-      return;
-    }
-    if (stopForm.amountPaid === '') { showToast('Enter the amount collected. Enter 0 if no payment was collected.', 'warning'); return; }
-    const amountPaid = Number(stopForm.amountPaid);
-    if (!Number.isFinite(amountPaid) || amountPaid < 0 || Math.round(amountPaid * 100) !== amountPaid * 100) {
-      showToast('Amount collected must be a nonnegative amount with no more than two decimal places.', 'warning');
+    const rawBoAmount = stopForm.boAmount === '' ? 0 : Number(stopForm.boAmount);
+    if (!Number.isFinite(rawBoAmount) || rawBoAmount < 0 || Math.abs(rawBoAmount * 100 - Math.round(rawBoAmount * 100)) > 0.000001) {
+      showToast('Enter a valid non-negative BO amount with up to two decimal places.', 'warning');
       return;
     }
     const grossProductBill = stop.items.reduce((sum, item) => {
       const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
-      return sum + Number(line.acceptedQty) * Number(item.unitPrice);
+      return sum + Number(line?.acceptedQty || 0) * Number(item.unitPrice || 0);
     }, 0);
-    const boDeduction = stop.items.reduce((sum, item) => {
-      const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
-      return sum + Number(line.boQty) * Number(item.unitPrice);
-    }, 0);
-    const shortDeductionAmount = Number(stopForm.shortDeductionAmount);
-    const isValidMoney = (value: number) => Number.isFinite(value) && value >= 0 && Math.abs(value * 100 - Math.round(value * 100)) < 0.000001;
-    if (stopForm.shortDeductionAmount === '' || !isValidMoney(shortDeductionAmount)) {
-      showToast('Enter a non-negative short total with up to two decimal places.', 'warning');
+    if (rawBoAmount > grossProductBill) {
+      showToast('Total BO amount cannot exceed the gross product bill.', 'warning');
       return;
     }
-    if (shortDeductionAmount > Math.max(0, grossProductBill - boDeduction)) {
-      showToast('The short total cannot exceed the product bill after BO deductions.', 'warning');
-      return;
-    }
-    const totalBill = Math.max(0, grossProductBill - boDeduction - shortDeductionAmount) + Number(stop.customer?.currentBalance || 0);
-    if (amountPaid > totalBill) { showToast('Amount collected cannot exceed the delivery bill plus the previous balance.', 'warning'); return; }
-    if (amountPaid > 0 && stopForm.paymentMethod !== 'Cash' && !String(stopForm.paymentReference || '').trim()) {
-      showToast(`Enter the ${stopForm.paymentMethod} payment reference.`, 'warning');
-      return;
-    }
-    if (amountPaid > 0 && stopForm.paymentMethod === 'Check'
-      && (!String(stopForm.bankName || '').trim() || !stopForm.checkDate || !Number.isFinite(new Date(stopForm.checkDate).getTime()))) {
-      showToast('Enter the bank name and a valid check date.', 'warning');
-      return;
-    }
+
     submissionLock.current = true;
     setSubmitting(true);
     try {
-      await apiRequest(`/delivery/stops/${stopId}/record`, { method: 'POST', body: JSON.stringify({ recipientName: stopForm.recipientName.trim(), paymentMethod: stopForm.paymentMethod, amountPaid, paymentReference: stopForm.paymentReference, bankName: stopForm.bankName, checkDate: stopForm.checkDate, notes: stopForm.notes, shortDeductionAmount, items: stopForm.items.map((line: DeliveryFormLine) => ({ id: line.deliveryItemId, acceptedQty: Number(line.acceptedQty), boRefusedQty: Number(line.boQty) })) }) });
-      showToast('Delivery, BO credit, receipt, and payment saved.'); setStopForm(null); await loadData();
-    } catch (e: any) { showToast(e.message, 'error'); }
-    finally { submissionLock.current = false; setSubmitting(false); }
+      await apiRequest(`/delivery/stops/${stopId}/record`, {
+        method: 'POST',
+        body: JSON.stringify({
+          recipientName: stopForm.recipientName.trim(),
+          boAmount: rawBoAmount,
+          notes: stopForm.notes,
+          items: stopForm.items.map((line: DeliveryFormLine) => ({
+            id: line.deliveryItemId,
+            acceptedQty: Number(line.acceptedQty),
+          })),
+        }),
+      });
+      showToast('Delivery recorded. Invoice created; payment can be marked in Sales & Reports.');
+      setStopForm(null);
+      await loadData();
+    } catch (e: any) {
+      showToast(e.message, 'error');
+    } finally {
+      submissionLock.current = false;
+      setSubmitting(false);
+    }
   };
   const markBackload = async (stopId: string) => {
     if (submissionLock.current) return;
@@ -504,78 +492,60 @@ function DeliveryTab({ onOpenReconciliation }: { onOpenReconciliation?: () => vo
             const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
             return sum + (Number(line.acceptedQty) || 0) * Number(item?.unitPrice || 0);
           }, 0);
-          const boAmount = (lines: DeliveryFormLine[]) => lines.reduce((sum: number, line: DeliveryFormLine) => {
-            const item = stop.items?.find(entry => entry.id === line.deliveryItemId);
-            return sum + (Number(line.boQty) || 0) * Number(item?.unitPrice || 0);
-          }, 0);
           const previousBalance = Number(stop.customer?.currentBalance || 0);
           const orderTotal = activeForm ? orderAmount(stopForm.items) : 0;
-          const currentBoTotal = activeForm ? boAmount(stopForm.items) : 0;
-          const currentShortTotal = activeForm ? Number(stopForm.shortDeductionAmount) || 0 : 0;
-          const finalProductBill = Math.max(0, orderTotal - currentBoTotal - currentShortTotal);
+          const currentBoTotal = activeForm && stopForm.boAmount !== '' ? Number(stopForm.boAmount) || 0 : 0;
+          const finalProductBill = Math.max(0, orderTotal - currentBoTotal);
           const totalBill = finalProductBill + previousBalance;
-          const collected = activeForm && stopForm.amountPaid !== '' ? Number(stopForm.amountPaid) || 0 : 0;
-          const clearedCollected = activeForm && stopForm.paymentMethod !== 'Check' ? collected : 0;
           const quantityErrors = activeForm ? stop.items.map(item => getDeliveryQuantityError(
             item.productName,
             item.loadedQty,
             stopForm.items.find((line: DeliveryFormLine) => line.deliveryItemId === item.id),
           )).filter((error): error is string => Boolean(error)) : [];
           const invalidQuantity = quantityErrors.length > 0;
-          const invalidAdjustment = activeForm && (
-            stopForm.shortDeductionAmount === ''
-            || !Number.isFinite(Number(stopForm.shortDeductionAmount))
-            || Number(stopForm.shortDeductionAmount) < 0
-            || Math.abs(Number(stopForm.shortDeductionAmount) * 100 - Math.round(Number(stopForm.shortDeductionAmount) * 100)) >= 0.000001
-            || currentShortTotal > Math.max(0, orderTotal - currentBoTotal)
-          );
-          const amountValid = activeForm
-            && stopForm.amountPaid !== ''
-            && Number.isFinite(Number(stopForm.amountPaid))
-            && Number(stopForm.amountPaid) >= 0
-            && Math.round(Number(stopForm.amountPaid) * 100) === Number(stopForm.amountPaid) * 100
-            && Number(stopForm.amountPaid) <= totalBill
-            && !invalidAdjustment;
-          const requiresPaymentReference = activeForm && collected > 0 && stopForm.paymentMethod !== 'Cash';
-          const missingPaymentDetails = requiresPaymentReference && (
-            !String(stopForm.paymentReference || '').trim()
-            || (stopForm.paymentMethod === 'Check'
-              && (!String(stopForm.bankName || '').trim() || !stopForm.checkDate))
+          const invalidBoAmount = activeForm && (
+            stopForm.boAmount === ''
+            || !Number.isFinite(Number(stopForm.boAmount))
+            || Number(stopForm.boAmount) < 0
+            || currentBoTotal > orderTotal
+            || Math.abs(Number(stopForm.boAmount) * 100 - Math.round(Number(stopForm.boAmount) * 100)) >= 0.000001
           );
           const canSave = activeForm
             && !submitting
             && !invalidQuantity
-            && !invalidAdjustment
-            && Boolean(String(stopForm.recipientName || '').trim())
-            && ['Cash', 'GCash', 'Bank Transfer', 'Check'].includes(stopForm.paymentMethod)
-            && Boolean(amountValid)
-            && !missingPaymentDetails;
+            && !invalidBoAmount
+            && Boolean(String(stopForm.recipientName || '').trim());
 
           return <div key={stop.id} className="border-b px-4 py-3 last:border-b-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div><span className="font-medium">#{index + 1}: {stop.storeName}</span><span className={`ml-2 rounded-full border px-2 py-0.5 text-xs font-semibold ${getStatusColor(stop.status)}`}>{stop.status}</span></div>
               {selectedRun.status === 'In Transit' && (stop.status === 'Pending' || stop.status === 'In Progress') && <div className="flex gap-2">
-                <button type="button" disabled={submitting} onClick={() => setStopForm({ stopId: stop.id, recipientName: '', paymentMethod: 'Cash', amountPaid: 0, shortDeductionAmount: 0, paymentReference: '', bankName: '', checkDate: '', notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty, boQty: 0 })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Record Delivery</button>
+                <button type="button" disabled={submitting} onClick={() => setStopForm({ stopId: stop.id, recipientName: '', boAmount: 0, notes: '', items: (stop.items || []).map(item => ({ deliveryItemId: item.id, acceptedQty: item.loadedQty })) })} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Record Delivery</button>
                 <button type="button" disabled={submitting} onClick={() => markBackload(stop.id)} className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">Failed / Backload</button>
               </div>}
             </div>
-            {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700">Backload reason: {stop.notes || 'Delivery failed'}</p>}
-            {!activeForm && stopInvoice && <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3 text-xs sm:grid-cols-4 xl:grid-cols-7">
-              <div>Loaded total: <strong>{formatPeso(Number(stopInvoice.grossDeliveryAmount) || 0)}</strong></div><div>Intact returns: <strong>{formatPeso(Number(stopInvoice.intactReturnDeductionAmount) || 0)}</strong></div><div>BO deduction: <strong>{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div><div>Short deduction: <strong>{formatPeso(Number(stopInvoice.shortDeductionAmount) || 0)}</strong></div><div>Total bill: <strong>{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div><div>Amount collected: <strong>{formatPeso((stopInvoice.payments || []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0))}</strong></div><div>Balance: <strong>{formatPeso(Number(stopInvoice.balanceRemaining) || 0)}</strong></div>
+            {stop.status === 'Failed' && <p className="mt-2 text-sm text-amber-700 font-medium">Backload recorded: {stop.notes || 'Delivery failed'}</p>}
+            {!activeForm && stopInvoice && <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg border bg-slate-50 p-3 text-xs sm:grid-cols-3 xl:grid-cols-6">
+              <div>Gross loaded total: <strong>{formatPeso(Number(stopInvoice.grossDeliveryAmount) || 0)}</strong></div>
+              <div>BO deduction: <strong className="text-rose-700">−{formatPeso(Number(stopInvoice.boDeductionAmount) || 0)}</strong></div>
+              <div>Net product bill: <strong>{formatPeso(Number(stopInvoice.billableProductAmount) || 0)}</strong></div>
+              <div>Previous balance: <strong className="text-amber-700">{formatPeso(Number(stopInvoice.priorBalance) || 0)}</strong></div>
+              <div>Total bill due: <strong className="text-rose-700">{formatPeso(Number(stopInvoice.netAmountDue) || 0)}</strong></div>
+              <div>Payment status: <span className={`ml-1 font-bold ${Number(stopInvoice.balanceRemaining) <= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{stopInvoice.paymentStatus || (Number(stopInvoice.balanceRemaining) <= 0 ? 'Paid' : 'Unpaid')}</span></div>
             </div>}
 
             {activeForm && <div className="mt-3 space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
               <div className="overflow-x-auto rounded-lg border bg-white">
-                <table className="w-full min-w-[760px] table-fixed text-sm">
-                  <colgroup><col className="w-[35%]" /><col className="w-[12%]" /><col className="w-[15%]" /><col className="w-[15%]" /><col className="w-[23%]" /></colgroup>
-                  <thead className="bg-slate-50"><tr className="text-left"><th className="px-3 py-2">Product</th><th className="px-2 py-2 text-right">Loaded</th><th className="px-2 py-2">Accepted</th><th className="px-2 py-2">BO damaged</th><th className="px-2 py-2 text-right">Billable</th></tr></thead>
+                <table className="w-full min-w-[680px] table-fixed text-sm">
+                  <colgroup><col className="w-[40%]" /><col className="w-[15%]" /><col className="w-[15%]" /><col className="w-[15%]" /><col className="w-[15%]" /></colgroup>
+                  <thead className="bg-slate-50"><tr className="text-left"><th className="px-3 py-2">Product</th><th className="px-2 py-2 text-right">Loaded</th><th className="px-2 py-2 text-right">Accepted Qty</th><th className="px-2 py-2 text-right">Unit Price</th><th className="px-2 py-2 text-right">Line Total</th></tr></thead>
                   <tbody>{stop.items?.map(item => {
                     const line = stopForm.items.find((entry: DeliveryFormLine) => entry.deliveryItemId === item.id);
-                    const updateLine = (field: 'acceptedQty' | 'boQty', value: string) => {
+                    const updateLine = (value: string) => {
                       setStopForm((current: any) => ({
                         ...current,
                         items: current.items.map((entry: DeliveryFormLine) => entry.deliveryItemId === item.id
-                          ? { ...entry, [field]: value === '' ? '' : Number(value) }
+                          ? { ...entry, acceptedQty: value === '' ? '' : Number(value) }
                           : entry),
                       }));
                     };
@@ -584,8 +554,20 @@ function DeliveryTab({ onOpenReconciliation }: { onOpenReconciliation?: () => vo
                       <tr className="border-t">
                         <td className="break-words px-3 py-2 font-medium">{item.productName}</td>
                         <td className="px-2 py-2 text-right text-slate-500">{item.loadedQty}</td>
-                        {(['acceptedQty', 'boQty'] as const).map(field => <td key={field} className="px-2 py-2"><input type="number" min={0} step={1} max={item.loadedQty} value={line?.[field] ?? ''} onChange={event => updateLine(field, event.target.value)} className="h-10 w-full rounded-md border border-slate-300 px-2 text-right focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-label={`${item.productName} ${field}`} /></td>)}
-                        <td className="px-2 py-2 text-right font-medium">{formatPeso(Math.max(0, (Number(line?.acceptedQty) - Number(line?.boQty)) * item.unitPrice))}</td>
+                        <td className="px-2 py-2 text-right">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            max={item.loadedQty}
+                            value={line?.acceptedQty ?? ''}
+                            onChange={event => updateLine(event.target.value)}
+                            className="h-10 w-24 rounded-md border border-slate-300 px-2 text-right focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100 font-semibold"
+                            aria-label={`${item.productName} accepted quantity`}
+                          />
+                        </td>
+                        <td className="px-2 py-2 text-right text-slate-600">{formatPeso(item.unitPrice)}</td>
+                        <td className="px-2 py-2 text-right font-semibold text-slate-800">{formatPeso(Math.max(0, (Number(line?.acceptedQty) || 0) * Number(item.unitPrice)))}</td>
                       </tr>
                       {lineError && <tr><td colSpan={5} className="px-3 pb-2 text-xs font-medium text-red-700">{lineError}</td></tr>}
                     </React.Fragment>;
@@ -593,33 +575,79 @@ function DeliveryTab({ onOpenReconciliation }: { onOpenReconciliation?: () => vo
                 </table>
               </div>
               {invalidQuantity && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{quantityErrors[0]}</div>}
-              <div className="grid grid-cols-1 gap-3 rounded-lg border bg-white p-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
-                <div>Product bill: <strong>{formatPeso(orderTotal)}</strong></div>
-                <div>BO deduction: <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
-                <div>Short deduction: <strong className="text-rose-700">−{formatPeso(currentShortTotal)}</strong></div>
-                <div>Final product bill: <strong>{formatPeso(finalProductBill)}</strong></div>
-                <div>Previous balance: <strong>{formatPeso(previousBalance)}</strong></div>
-                <div>Total bill: <strong className="text-rose-700">{formatPeso(totalBill)}</strong></div>
-                <div>Amount collected: <strong>{formatPeso(collected)}</strong></div>
-                <div className="sm:col-span-2 xl:col-span-3">Balance after cleared collection: <strong>{formatPeso(Math.max(0, totalBill - clearedCollected))}</strong>{stopForm.paymentMethod === 'Check' && collected > 0 && <span className="ml-1 text-xs text-slate-500">(check remains pending until cleared)</span>}</div>
+
+              {/* Separated Total BO Amount Section */}
+              <div className="rounded-xl border border-rose-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-800">
+                      Total Bad Order (BO) / Melted Amount (₱)
+                    </label>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Enter the total peso amount of all damaged or melted items returned by this customer. Deducted directly from bill.
+                    </p>
+                  </div>
+                  <div className="relative w-full sm:w-64">
+                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold">₱</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={orderTotal}
+                      step="0.01"
+                      value={stopForm.boAmount}
+                      onChange={e => setStopForm({ ...stopForm, boAmount: e.target.value === '' ? '' : Number(e.target.value) })}
+                      placeholder="0.00"
+                      className="h-11 w-full rounded-lg border border-slate-300 pl-8 pr-3 text-right text-sm font-bold text-rose-700 focus:border-rose-500 focus:outline-none focus:ring-2 focus:ring-rose-100"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-                <div><label className="mb-1 block text-sm font-semibold">Received by <span className="text-red-600">*</span></label><input required value={stopForm.recipientName} onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" /></div>
-                <div><label className="mb-1 block text-sm font-semibold">Payment method</label><select value={stopForm.paymentMethod} onChange={e => setStopForm({ ...stopForm, paymentMethod: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"><option value="Cash">Cash</option><option value="GCash">GCash</option><option value="Bank Transfer">Bank Transfer</option><option value="Check">Bank Check</option></select></div>
-                <div><label className="mb-1 block text-sm font-semibold">Amount collected (₱)</label><input type="number" min={0} max={totalBill} step="0.01" value={stopForm.amountPaid} onChange={e => setStopForm({ ...stopForm, amountPaid: e.target.value === '' ? '' : Number(e.target.value) })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-describedby="payment-amount-help" /><p id="payment-amount-help" className="mt-1 text-xs text-slate-500">Enter 0 when no payment is collected.</p></div>
-                <div><label className="mb-1 block text-sm font-semibold">Short total (₱)</label><input type="number" min={0} max={Math.max(0, orderTotal - currentBoTotal)} step="0.01" value={stopForm.shortDeductionAmount} onChange={e => setStopForm({ ...stopForm, shortDeductionAmount: e.target.value === '' ? '' : Number(e.target.value) })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" aria-describedby={`short-total-help-${stop.id}`} /><p id={`short-total-help-${stop.id}`} className="mt-1 text-xs text-slate-500">Applied after the BO quantity deduction.</p></div>
-                {requiresPaymentReference && <div><label className="mb-1 block text-sm font-semibold">Payment reference <span className="text-red-600">*</span></label><input required value={stopForm.paymentReference} onChange={e => setStopForm({ ...stopForm, paymentReference: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" />{stopForm.paymentMethod === 'Check' && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2"><div><label className="mb-1 block text-xs font-semibold">Bank name *</label><input required value={stopForm.bankName} onChange={e => setStopForm({ ...stopForm, bankName: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div><div><label className="mb-1 block text-xs font-semibold">Check date *</label><input required type="date" value={stopForm.checkDate} onChange={e => setStopForm({ ...stopForm, checkDate: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" /></div></div>}</div>}
-                <div className="md:col-span-2 xl:col-span-3"><label className="mb-1 block text-sm font-semibold">Notes</label><input value={stopForm.notes} onChange={e => setStopForm({ ...stopForm, notes: e.target.value })} className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm" placeholder="Optional delivery notes." /></div>
+
+              {/* Calculations Summary Card */}
+              <div className="grid grid-cols-1 gap-3 rounded-lg border bg-white p-4 text-sm sm:grid-cols-2 xl:grid-cols-5">
+                <div><span className="text-slate-500 text-xs block">Gross Product Bill</span> <strong>{formatPeso(orderTotal)}</strong></div>
+                <div><span className="text-slate-500 text-xs block">Total BO Deduction</span> <strong className="text-rose-700">−{formatPeso(currentBoTotal)}</strong></div>
+                <div><span className="text-slate-500 text-xs block">Net Product Bill</span> <strong>{formatPeso(finalProductBill)}</strong></div>
+                <div className="bg-amber-50/70 p-2 rounded-lg border border-amber-200"><span className="text-amber-800 text-xs block font-medium">Previous Balance</span> <strong className="text-amber-900 font-bold">{formatPeso(previousBalance)}</strong></div>
+                <div className="bg-rose-50 p-2 rounded-lg border border-rose-200"><span className="text-rose-700 text-xs block font-medium">Total Balance to Pay</span> <strong className="text-rose-800 font-bold text-base">{formatPeso(totalBill)}</strong></div>
               </div>
-              {amountValid === false && stopForm.amountPaid !== '' && <p role="alert" className="text-sm text-red-700">Enter a nonnegative amount up to the total bill of {formatPeso(totalBill)}.</p>}
-              {invalidAdjustment && <p role="alert" className="text-sm text-red-700">Enter a valid short total that does not exceed the product bill after BO deductions.</p>}
-              {activeForm && !String(stopForm.recipientName || '').trim() && <p className="text-sm text-amber-800">Received by is required.</p>}
-              {missingPaymentDetails && <p role="alert" className="text-sm text-amber-800">Complete the required payment reference and check details.</p>}
+
+              {/* Notice Banner */}
+              <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 flex items-center justify-between">
+                <span>ℹ️ <strong>Payment Recording Notice:</strong> Payment collection is recorded and marked as paid in the <strong>Sales &amp; Reports</strong> module under Official Receipts &amp; Billing.</span>
+              </div>
+
+              {/* Received By and Notes */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold">Received by <span className="text-red-600">*</span></label>
+                  <input
+                    required
+                    placeholder="Name of store owner or staff who accepted delivery"
+                    value={stopForm.recipientName}
+                    onChange={e => setStopForm({ ...stopForm, recipientName: e.target.value })}
+                    className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold">Delivery Notes (optional)</label>
+                  <input
+                    value={stopForm.notes}
+                    onChange={e => setStopForm({ ...stopForm, notes: e.target.value })}
+                    className="h-11 w-full rounded-md border border-slate-300 px-3 text-sm"
+                    placeholder="Optional delivery notes or comments"
+                  />
+                </div>
+              </div>
+
+              {activeForm && !String(stopForm.recipientName || '').trim() && <p className="text-xs text-amber-800">Received by is required.</p>}
+              {invalidBoAmount && <p role="alert" className="text-xs text-red-700">Enter a valid BO amount between ₱0.00 and {formatPeso(orderTotal)}.</p>}
+
               <div className="flex flex-col-reverse justify-end gap-2 border-t pt-3 sm:flex-row">
                 <button type="button" onClick={() => setStopForm(null)} disabled={submitting} className="h-11 rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">Cancel</button>
                 <button type="button" onClick={() => handleRecordStop(stop.id)} disabled={!canSave} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 disabled:text-white">
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {submitting ? 'Saving delivery…' : 'Save Delivery and Payment'}
+                  {submitting ? 'Saving delivery…' : 'Save Delivery Record'}
                 </button>
               </div>
             </div>}

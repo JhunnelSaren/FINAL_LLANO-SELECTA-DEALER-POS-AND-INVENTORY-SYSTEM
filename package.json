@@ -1,5 +1,5 @@
 {
-  "name": "llano-selecta-dealer-pos-and-inventory-system",
+  "name": "llano-selecta-dealer-pos",
   "version": "1.0.0",
   "description": "Complete POS and Inventory System for Llano Selecta Dealer (Valencia, San Fernando, Cabanglasan)",
   "private": true,
@@ -18,7 +18,9 @@
     "prisma:seed": "npm run prisma:seed --prefix server",
     "prisma:bootstrap": "npm run prisma:bootstrap --prefix server",
     "setup": "npm run prisma:generate && npm run prisma:safe-sync && npm run prisma:bootstrap",
-    "prisma:safe-sync": "npm run prisma:safe-sync --prefix server"
+    "prisma:safe-sync": "npm run prisma:safe-sync --prefix server",
+    "db:sync:sqlite": "npm run db:sync:sqlite --prefix server",
+    "db:push:sqlite": "npm run db:push:sqlite --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

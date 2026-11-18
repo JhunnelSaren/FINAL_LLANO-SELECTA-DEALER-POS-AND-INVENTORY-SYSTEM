@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import prisma from './db.js';
+import { formatAuditSentence } from './audit-formatter.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'llano-selecta-dealer-secure-key-bukidnon-2026';
 
@@ -72,15 +73,16 @@ export async function recordAudit(
   action: string,
   module: string,
   user: string,
-  details: Record<string, any>
+  details: Record<string, any> | string
 ) {
   try {
+    const formattedDetails = formatAuditSentence(action, module, user, details);
     await prisma.auditLog.create({
       data: {
         action,
         module,
         user,
-        details: JSON.stringify(details),
+        details: formattedDetails,
       },
     });
   } catch (err) {

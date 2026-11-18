@@ -14,9 +14,9 @@ type Notification = {
   module: string;
 };
 
-async function buildNotifications(isAdmin: boolean): Promise<Notification[]> {
+async function buildNotifications(userId: string, isAdmin: boolean): Promise<Notification[]> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const [runs, bookings, products, receipts, reconciliations, pendingBo, recentActivity] = await Promise.all([
+  const [runs, bookings, products, receipts, reconciliations, pendingBo, recentActivity, pendingStockRequests, reviewedStaffRequests] = await Promise.all([
     prisma.deliveryRun.findMany({
       where: { status: { in: ['Prepared', 'In Transit', 'Delivered', 'Reconciled'] } },
       include: { stops: true, reconciliation: true },
@@ -28,9 +28,39 @@ async function buildNotifications(isAdmin: boolean): Promise<Notification[]> {
     prisma.routeReconciliation.findMany({ where: { status: 'Pending Approval' }, include: { deliveryRun: true }, orderBy: { reconciliationDate: 'desc' }, take: 25 }),
     prisma.boDiscrepancy.findMany({ where: { disposition: 'Pending' }, orderBy: { createdAt: 'desc' }, take: 25 }),
     prisma.auditLog.findMany({ where: { timestamp: { gte: sevenDaysAgo }, module: { not: 'Auth' } }, orderBy: { timestamp: 'desc' }, take: 300 }),
+    isAdmin
+      ? ((prisma as any).stockAdjustmentRequest
+          ? (prisma as any).stockAdjustmentRequest.findMany({ where: { status: 'Pending' }, orderBy: { createdAt: 'desc' }, take: 20 })
+          : prisma.$queryRaw<any[]>`SELECT * FROM \`stockadjustmentrequest\` WHERE \`status\` = 'Pending' ORDER BY \`createdAt\` DESC LIMIT 20`).catch(() => [])
+      : Promise.resolve([]),
+    !isAdmin
+      ? ((prisma as any).stockAdjustmentRequest
+          ? (prisma as any).stockAdjustmentRequest.findMany({ where: { staffId: userId, status: { in: ['Approved', 'Rejected'] }, reviewedAt: { gte: sevenDaysAgo } }, orderBy: { reviewedAt: 'desc' }, take: 20 })
+          : prisma.$queryRaw<any[]>`SELECT * FROM \`stockadjustmentrequest\` WHERE \`staffId\` = ${userId} AND \`status\` IN ('Approved', 'Rejected') AND \`reviewedAt\` >= ${sevenDaysAgo} ORDER BY \`reviewedAt\` DESC LIMIT 20`).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   return [
+    ...(isAdmin ? (pendingStockRequests || []).map((req: any) => ({
+      id: `stockreq-${req.id}`,
+      type: 'stock-request',
+      level: 'warning' as const,
+      title: 'Stock edit permission requested',
+      message: `${req.staffName || 'Staff'} asked permission to adjust ${req.productName || 'product'} (${Number(req.requestedChange) >= 0 ? '+' : ''}${req.requestedChange} units): ${req.reason || 'Count discrepancy'}`,
+      createdAt: req.createdAt,
+      module: 'inventory',
+    })) : []),
+    ...(!isAdmin ? (reviewedStaffRequests || []).map((req: any) => ({
+      id: `stockres-${req.id}`,
+      type: 'stock-response',
+      level: req.status === 'Approved' ? ('notice' as const) : ('warning' as const),
+      title: req.status === 'Approved' ? 'Stock edit request allowed' : 'Stock edit request denied',
+      message: req.status === 'Approved'
+        ? `Admin (${req.adminName || 'Admin'}) allowed adjustment for ${req.productName} (${Number(req.requestedChange) >= 0 ? '+' : ''}${req.requestedChange} units).`
+        : `Admin (${req.adminName || 'Admin'}) denied adjustment for ${req.productName}: ${req.adminNotes || 'Declined by Admin'}.`,
+      createdAt: req.reviewedAt || req.updatedAt || req.createdAt,
+      module: 'inventory',
+    })) : []),
     ...runs.filter(run => run.status === 'In Transit').map(run => ({ id: `run-${run.id}`, type: 'delivery', level: 'urgent' as const, title: 'Delivery run in progress', message: `${run.area || run.route} · ${run.stops.length} store stop(s)`, createdAt: run.dispatchedAt || run.createdAt, module: 'orders-delivery' })),
     ...runs.filter(run => run.status === 'Prepared').map(run => ({ id: `prepared-${run.id}`, type: 'delivery', level: 'notice' as const, title: 'Delivery run ready', message: `${run.area || run.route} · ${run.stops.length} store stop(s) waiting for dispatch`, createdAt: run.createdAt, module: 'orders-delivery' })),
     ...runs.filter(run => run.status === 'Delivered' || run.status === 'Reconciled').map(run => {
@@ -62,7 +92,7 @@ async function buildNotifications(isAdmin: boolean): Promise<Notification[]> {
 }
 
 async function loadUserNotifications(userId: string, isAdmin: boolean) {
-  const generated = await buildNotifications(isAdmin);
+  const generated = await buildNotifications(userId, isAdmin);
   const states = generated.length ? await prisma.userNotificationState.findMany({
     where: { userId, notificationId: { in: generated.map(item => item.id) } },
   }) : [];
@@ -125,7 +155,7 @@ router.delete('/:notificationId', authenticateToken, async (req: AuthenticatedRe
   try {
     const userId = req.user!.id;
     const notificationId = String(req.params.notificationId);
-    const generated = await buildNotifications(req.user!.role === 'Admin');
+    const generated = await buildNotifications(userId, req.user!.role === 'Admin');
     if (!generated.some(item => item.id === notificationId)) return res.status(404).json({ error: 'Notification not found.' });
     await prisma.userNotificationState.upsert({
       where: { userId_notificationId: { userId, notificationId } },

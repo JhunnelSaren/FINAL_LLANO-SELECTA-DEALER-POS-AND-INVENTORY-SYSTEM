@@ -290,7 +290,6 @@ router.post('/stops/:stopId/fail', authenticateToken, async (req: AuthenticatedR
   try {
     const now = new Date();
     const failedStop = await prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT "id" FROM "DeliveryRun" WHERE "id" = (SELECT "deliveryRunId" FROM "DeliveryStop" WHERE "id" = ${stopId}) FOR UPDATE`;
       const stop = await tx.deliveryStop.findUnique({ where: { id: stopId }, include: { items: true, deliveryRun: true } });
       if (!stop) throw new DeliveryWorkflowError(404, 'Delivery stop not found.');
       if (stop.deliveryRun.status !== 'In Transit') throw new DeliveryWorkflowError(409, 'Backloads can only be recorded for a dispatched run.');
@@ -321,35 +320,31 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
   const {
     items: deliveredLines,
     recipientName,
-    paymentMethod,
-    amountPaid,
+    paymentMethod = 'Cash',
+    amountPaid = 0,
     paymentReference,
     bankName,
     checkDate,
     notes,
-    shortDeductionAmount: submittedShortDeduction,
+    shortDeductionAmount: submittedShortDeduction = 0,
+    boAmount: submittedBoAmount,
   } = req.body;
 
   try {
     const recipient = typeof recipientName === 'string' ? recipientName.trim() : '';
     if (!recipient) throw new DeliveryWorkflowError(400, 'Enter who received the delivery.');
-    if (!['Cash', 'GCash', 'Check', 'Bank Transfer'].includes(paymentMethod)) {
-      throw new DeliveryWorkflowError(400, 'Choose Cash, GCash, Bank Transfer, or Check for payment.');
-    }
-    if (amountPaid === undefined || amountPaid === null || amountPaid === '') {
-      throw new DeliveryWorkflowError(400, 'Enter the amount collected. Enter 0 if no payment was collected.');
-    }
-    const paid = Number(amountPaid);
+    const paid = amountPaid === undefined || amountPaid === null || amountPaid === '' ? 0 : Number(amountPaid);
     if (!Number.isFinite(paid) || paid < 0 || Math.round(paid * 100) !== paid * 100) {
       throw new DeliveryWorkflowError(400, 'Amount collected must be a nonnegative amount with no more than two decimal places.');
     }
+    const resolvedMethod = ['Cash', 'GCash', 'Check', 'Bank Transfer'].includes(paymentMethod) ? paymentMethod : 'Cash';
     const reference = typeof paymentReference === 'string' ? paymentReference.trim() : '';
     const bank = typeof bankName === 'string' ? bankName.trim() : '';
     const checkDateValue = typeof checkDate === 'string' ? checkDate.trim() : '';
-    if (paid > 0 && paymentMethod !== 'Cash' && !reference) {
-      throw new DeliveryWorkflowError(400, `Enter the ${paymentMethod} payment reference.`);
+    if (paid > 0 && resolvedMethod !== 'Cash' && !reference) {
+      throw new DeliveryWorkflowError(400, `Enter the ${resolvedMethod} payment reference.`);
     }
-    if (paid > 0 && paymentMethod === 'Check'
+    if (paid > 0 && resolvedMethod === 'Check'
       && (!bank || !checkDateValue || !Number.isFinite(new Date(checkDateValue).getTime()))) {
       throw new DeliveryWorkflowError(400, 'Enter the bank name and a valid check date.');
     }
@@ -358,11 +353,20 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
     if (!isValidMoney(shortDeduction)) {
       throw new DeliveryWorkflowError(400, 'Short total must be a non-negative amount with up to two decimal places.');
     }
+
+    let directBoAmount: number | undefined = undefined;
+    if (submittedBoAmount !== undefined && submittedBoAmount !== null && submittedBoAmount !== '') {
+      const parsedBo = Number(submittedBoAmount);
+      if (!isValidMoney(parsedBo)) {
+        throw new DeliveryWorkflowError(400, 'Total BO amount must be a non-negative amount with up to two decimal places.');
+      }
+      directBoAmount = parsedBo;
+    }
+
     if (!Array.isArray(deliveredLines)) {
       return res.status(400).json({ error: 'Enter delivery results for every loaded product.' });
     }
     const result = await prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT "id" FROM "DeliveryRun" WHERE "id" = (SELECT "deliveryRunId" FROM "DeliveryStop" WHERE "id" = ${stopId}) FOR UPDATE`;
       const stop = await tx.deliveryStop.findUnique({
         where: { id: stopId },
         include: { deliveryRun: true, items: true, invoice: true },
@@ -379,13 +383,12 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
         throw new DeliveryWorkflowError(400, 'Enter delivery results for every loaded product.');
       }
 
-      await tx.$queryRaw`SELECT "id" FROM "customers" WHERE "id" = ${stop.customerId} FOR UPDATE`;
       const customer = await tx.customer.findUnique({ where: { id: stop.customerId } });
       if (!customer) throw new DeliveryWorkflowError(404, 'Customer not found.');
 
       const submittedLines = new Map<string, any>();
       for (const line of deliveredLines) {
-        const itemId = String(line?.id || line?.productId || '');
+        const itemId = String(line?.id || line?.deliveryItemId || line?.productId || '');
         if (!itemId || submittedLines.has(itemId)) {
           throw new DeliveryWorkflowError(400, 'Each loaded product must be recorded exactly once.');
         }
@@ -404,13 +407,13 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
 
         const quantities = {
           acceptedQty: line.acceptedQty,
-          boRefusedQty: line.boRefusedQty,
+          boRefusedQty: line.boRefusedQty ?? 0,
         };
         const quantityError = validateDeliveryQuantities(existingItem.productName, existingItem.loadedQty, quantities);
         if (quantityError) throw new DeliveryWorkflowError(400, quantityError);
 
         const acceptedQty = quantities.acceptedQty as number;
-        const boRefusedQty = quantities.boRefusedQty as number;
+        const boRefusedQty = Number(quantities.boRefusedQty ?? 0);
         const intactReturnedQty = existingItem.loadedQty - acceptedQty;
         const unitPrice = Number(existingItem.unitPrice);
         if (!Number.isFinite(unitPrice) || unitPrice < 0) {
@@ -428,7 +431,7 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
         grossDeliveryAmount += existingItem.loadedQty * unitPrice;
         intactReturnDeductionAmount += intactReturnedQty * unitPrice;
 
-        if (boRefusedQty > 0) {
+        if (directBoAmount === undefined && boRefusedQty > 0) {
           const boCredit = Number((boRefusedQty * unitPrice).toFixed(2));
           boDiscrepanciesToCreate.push({
             id: `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
@@ -458,10 +461,15 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
       const totals = calculateDeliveryAmounts(
         amountLines,
         Number(customer.currentBalance) || 0,
-        paymentMethod,
+        resolvedMethod,
         paid,
         shortDeduction,
+        directBoAmount,
       );
+
+      if (totals.boDeductionAmount > totals.productBillAmount) {
+        throw new DeliveryWorkflowError(400, 'The total BO amount cannot exceed the gross product bill.');
+      }
       if (shortDeduction > Math.max(0, totals.productBillAmount - totals.boDeductionAmount)) {
         throw new DeliveryWorkflowError(400, 'The short total cannot exceed the product bill after BO deductions.');
       }
@@ -471,6 +479,28 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
       if (paid > 0 && reference) {
         const duplicatePayment = await tx.paymentTransaction.findFirst({ where: { referenceNumber: reference } });
         if (duplicatePayment) throw new DeliveryWorkflowError(409, `Payment reference "${reference}" was already recorded previously.`);
+      }
+
+      // If direct whole BO amount was entered, record discrepancy record
+      if (directBoAmount !== undefined && directBoAmount > 0) {
+        boDiscrepanciesToCreate.push({
+          id: `BO-${Date.now()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+          customerId: customer.id,
+          deliveryRef: stop.deliveryRun.runNumber,
+          storeName: stop.storeName,
+          productId: stop.items[0]?.productId || 'BO-TOTAL',
+          productName: stop.items.length === 1 ? stop.items[0].productName : 'Bad Order (Total BO Returned)',
+          category: stop.items[0]?.category || 'General',
+          quantity: 1,
+          unitPrice: directBoAmount,
+          totalDeduction: directBoAmount,
+          reason: `Total BO deduction of ₱${directBoAmount.toFixed(2)} applied for ${stop.storeName} on run ${stop.deliveryRun.runNumber}`,
+          reportedBy: stop.deliveryRun.collector || req.user?.name || 'Collector',
+          disposition: 'Refunded',
+          dispositionBy: 'SELECTA',
+          dispositionAt: new Date(),
+          notes: `Total BO amount of ₱${directBoAmount.toFixed(2)} deducted from bill for run ${stop.deliveryRun.runNumber}.`,
+        });
       }
 
       for (const itemUpdate of itemUpdates) {
@@ -489,7 +519,7 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
 
       const invoice = await tx.customerInvoice.create({
         data: {
-          invoiceNumber: `OR-${stop.storeName.slice(0, 3).toUpperCase()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+          invoiceNumber: `OR-${stop.storeName.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'INV'}-${randomUUID().slice(0, 8).toUpperCase()}`,
           deliveryStopId: stop.id,
           customerId: stop.customerId,
           storeName: stop.storeName,
@@ -518,11 +548,11 @@ router.post('/stops/:stopId/record', authenticateToken, async (req: Authenticate
             invoiceId: invoice.id,
             customerId: stop.customerId,
             amount: paid,
-            paymentMethod,
+            paymentMethod: resolvedMethod,
             referenceNumber: reference || null,
             bankName: bank || null,
-            checkDate: paymentMethod === 'Check' ? new Date(checkDateValue) : null,
-            checkStatus: paymentMethod === 'Check' ? 'Pending' : 'Cleared',
+            checkDate: resolvedMethod === 'Check' ? new Date(checkDateValue) : null,
+            checkStatus: resolvedMethod === 'Check' ? 'Pending' : 'Cleared',
             collectedBy: stop.deliveryRun.collector || req.user?.name || 'Collector',
             notes: `Collected during delivery stop at ${stop.storeName}`,
           },

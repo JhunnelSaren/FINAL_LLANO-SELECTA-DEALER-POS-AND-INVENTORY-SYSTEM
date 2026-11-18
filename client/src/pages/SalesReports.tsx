@@ -298,12 +298,16 @@ function PaymentModal({
 }) {
   const { showToast } = useToast();
   const [amount, setAmount] = useState<string>(String(invoice.balance));
-  const [method, setMethod] = useState<'Cash' | 'GCash' | 'Check'>('Cash');
+  const [method, setMethod] = useState<'Cash' | 'GCash' | 'Check' | 'Bank Transfer'>('Cash');
   const [reference, setReference] = useState('');
   const [bankName, setBankName] = useState('');
   const [checkDate, setCheckDate] = useState('');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleQuickAmount = (val: number) => {
+    setAmount(val.toFixed(2));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,7 +317,7 @@ function PaymentModal({
       return;
     }
     if (numAmount > invoice.balance) {
-      showToast('Amount exceeds balance', 'error');
+      showToast('Amount exceeds remaining balance', 'error');
       return;
     }
     setLoading(true);
@@ -327,7 +331,7 @@ function PaymentModal({
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || 'Failed to record payment');
       }
-      showToast('Payment recorded successfully', 'success');
+      showToast('Payment recorded successfully! Invoice status updated.', 'success');
       onSuccess();
       onClose();
     } catch (error: any) {
@@ -338,20 +342,67 @@ function PaymentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold text-gray-800">Record Payment</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg border border-gray-100">
+        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Record Customer Payment</h2>
+            <p className="text-xs text-gray-500">Apply cash, GCash, or check payment to invoice</p>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">×</button>
         </div>
-        <div className="mb-4 p-3 bg-rose-50 rounded-lg text-sm">
-          <p className="text-gray-600">Invoice: <strong>{invoice.invoiceNumber}</strong></p>
-          <p className="text-gray-600">Customer: <strong>{invoice.customer.name}</strong></p>
-          <p className="text-gray-600">Balance Due: <strong className="text-red-600">{formatPeso(invoice.balance)}</strong></p>
+
+        {/* Invoice Summary Card */}
+        <div className="mb-4 p-4 bg-gradient-to-br from-rose-50 to-orange-50 rounded-xl border border-rose-100 text-sm">
+          <div className="flex justify-between items-start mb-2">
+            <div>
+              <p className="text-xs text-gray-500 font-medium">Customer Store</p>
+              <p className="font-bold text-gray-900 text-base">{invoice.customer.name}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500 font-medium">Invoice #</p>
+              <p className="font-mono font-bold text-rose-700">{invoice.invoiceNumber}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-rose-200/60 text-xs">
+            <div>
+              <span className="text-gray-500">Total Bill:</span>
+              <p className="font-semibold text-gray-800">{formatPeso(invoice.totalAmount)}</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Already Paid:</span>
+              <p className="font-semibold text-green-700">{formatPeso(invoice.amountCollected)}</p>
+            </div>
+            <div>
+              <span className="text-gray-500">Balance Due:</span>
+              <p className="font-bold text-red-600 text-sm">{formatPeso(invoice.balance)}</p>
+            </div>
+          </div>
         </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (₱)</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-semibold text-gray-700">Payment Amount (₱)</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleQuickAmount(invoice.balance)}
+                  className="text-xs bg-rose-100 hover:bg-rose-200 text-rose-800 font-semibold px-2 py-0.5 rounded transition-colors"
+                >
+                  Pay Full ({formatPeso(invoice.balance)})
+                </button>
+                {invoice.balance > 100 && (
+                  <button
+                    type="button"
+                    onClick={() => handleQuickAmount(Math.round(invoice.balance / 2))}
+                    className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-2 py-0.5 rounded transition-colors"
+                  >
+                    50% ({formatPeso(Math.round(invoice.balance / 2))})
+                  </button>
+                )}
+              </div>
+            </div>
             <input
               type="number"
               min="0.01"
@@ -360,65 +411,95 @@ function PaymentModal({
               value={amount}
               onChange={e => setAmount(e.target.value)}
               required
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-base font-semibold focus:outline-none focus:ring-2 focus:ring-rose-500 text-gray-900"
             />
           </div>
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
-            <select
-              value={method}
-              onChange={e => setMethod(e.target.value as typeof method)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
-            >
-              <option value="Cash">Cash</option>
-              <option value="GCash">GCash</option>
-              <option value="Check">Bank Check</option>
-            </select>
+            <div className="grid grid-cols-4 gap-2">
+              {(['Cash', 'GCash', 'Check', 'Bank Transfer'] as const).map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setMethod(m)}
+                  className={`py-2 text-xs font-semibold rounded-lg border transition-all ${
+                    method === m
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                      : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
           </div>
-          {(method === 'Check' || method === 'GCash') && (
+
+          {(method === 'Check' || method === 'GCash' || method === 'Bank Transfer') && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                {method === 'Check' ? 'Check Number' : 'GCash Reference'}
+                {method === 'Check' ? 'Check Number *' : `${method} Reference / Ref # *`}
               </label>
               <input
                 type="text"
                 value={reference}
                 onChange={e => setReference(e.target.value)}
-                placeholder={method === 'Check' ? 'Check #' : 'GCash reference #'}
+                placeholder={method === 'Check' ? 'e.g. CHK-109283' : 'e.g. 90283019283'}
+                required
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
               />
             </div>
           )}
+
           {method === 'Check' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name</label>
-                <input value={bankName} onChange={e => setBankName(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Bank Name *</label>
+                <input
+                  value={bankName}
+                  onChange={e => setBankName(e.target.value)}
+                  placeholder="e.g. BDO, BPI, Landbank"
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Check Date</label>
-                <input type="date" value={checkDate} onChange={e => setCheckDate(e.target.value)} required className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                <label className="block text-sm font-medium text-gray-700 mb-1">Check Date *</label>
+                <input
+                  type="date"
+                  value={checkDate}
+                  onChange={e => setCheckDate(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                />
               </div>
             </div>
           )}
+
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Notes / Remarks (optional)</label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}
+              placeholder="e.g. Customer paid in full at office / route collection"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
             />
           </div>
-          <div className="flex gap-2 pt-2">
+
+          <div className="flex gap-2 pt-2 border-t border-gray-100">
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors"
+              className="flex-1 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors shadow-sm"
             >
-              {loading ? 'Saving…' : 'Record Payment'}
+              {loading ? 'Processing Payment…' : `Confirm & Save Payment (${formatPeso(Number(amount) || 0)})`}
             </button>
-            <button type="button" onClick={onClose} className="flex-1 border border-gray-300 text-gray-700 rounded-lg px-4 py-2 text-sm hover:bg-gray-50 transition-colors">
+            <button
+              type="button"
+              onClick={onClose}
+              className="border border-gray-300 text-gray-700 rounded-lg px-4 py-2.5 text-sm hover:bg-gray-50 transition-colors"
+            >
               Cancel
             </button>
           </div>
@@ -428,13 +509,13 @@ function PaymentModal({
   );
 }
 
-// â”€â”€â”€ Sub-tab: Receipts & Customer Bills â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Sub-tab: Receipts & Customer Bills ────────────────────────────────────
 
 function ReceiptsTab() {
   const { showToast } = useToast();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
-  const [customerFilter, setCustomerFilter] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -445,7 +526,6 @@ function ReceiptsTab() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (customerFilter) params.set('customerId', customerFilter);
       if (statusFilter) params.set('paymentStatus', statusFilter);
       if (startDate) params.set('dateFrom', startDate);
       if (endDate) params.set('dateTo', endDate);
@@ -468,7 +548,7 @@ function ReceiptsTab() {
         paidAmount: Number(row.totalPaid),
         amountCollected: (row.payments ?? []).reduce((sum: number, payment: any) => sum + (Number(payment.amount) || 0), 0),
         balance: Number(row.balanceRemaining),
-        status: String(row.paymentStatus).toUpperCase(),
+        status: String(row.paymentStatus).toUpperCase() as 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERDUE',
         createdAt: row.invoiceDate,
         payments: (row.payments ?? []).map((payment: any) => ({
           id: payment.id,
@@ -484,19 +564,123 @@ function ReceiptsTab() {
     } finally {
       setLoading(false);
     }
-  }, [customerFilter, statusFilter, startDate, endDate, showToast]);
+  }, [statusFilter, startDate, endDate, showToast]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 
+  // Derived filter for real-time search
+  const filteredInvoices = invoices.filter(inv => {
+    if (!searchTerm.trim()) return true;
+    const term = searchTerm.toLowerCase();
+    return (
+      inv.invoiceNumber.toLowerCase().includes(term) ||
+      inv.customer.name.toLowerCase().includes(term) ||
+      (inv.deliveryRun?.runNumber && inv.deliveryRun.runNumber.toLowerCase().includes(term))
+    );
+  });
+
+  // KPI calculations
+  const totalBilled = invoices.reduce((s, i) => s + i.totalAmount, 0);
+  const unpaidInvoices = invoices.filter(i => i.status === 'UNPAID');
+  const unpaidTotal = unpaidInvoices.reduce((s, i) => s + i.balance, 0);
+  const partialInvoices = invoices.filter(i => i.status === 'PARTIAL');
+  const partialTotal = partialInvoices.reduce((s, i) => s + i.balance, 0);
+  const paidInvoices = invoices.filter(i => i.status === 'PAID');
+  const paidTotal = invoices.reduce((s, i) => s + i.paidAmount, 0);
+
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Quick KPI Status Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <button
+          type="button"
+          onClick={() => setStatusFilter('')}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            statusFilter === ''
+              ? 'bg-rose-50 border-rose-400 shadow-sm ring-2 ring-rose-200'
+              : 'bg-white border-gray-200 hover:border-gray-300 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-gray-500 font-semibold uppercase tracking-wider mb-1">
+            <span>All Invoices</span>
+            <span className="bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs font-bold">{invoices.length}</span>
+          </div>
+          <p className="text-xl font-bold text-gray-900">{formatPeso(totalBilled)}</p>
+          <p className="text-xs text-gray-500 mt-1">Total billed customer sales</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'Unpaid' ? '' : 'Unpaid')}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            statusFilter === 'Unpaid'
+              ? 'bg-red-50 border-red-400 shadow-sm ring-2 ring-red-200'
+              : 'bg-white border-gray-200 hover:border-red-200 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-red-600 font-semibold uppercase tracking-wider mb-1">
+            <span>Unpaid Invoices</span>
+            <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded-full text-xs font-bold">{unpaidInvoices.length}</span>
+          </div>
+          <p className="text-xl font-bold text-red-600">{formatPeso(unpaidTotal)}</p>
+          <p className="text-xs text-red-500 mt-1">Click to view unpaid accounts</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'Partial' ? '' : 'Partial')}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            statusFilter === 'Partial'
+              ? 'bg-amber-50 border-amber-400 shadow-sm ring-2 ring-amber-200'
+              : 'bg-white border-gray-200 hover:border-amber-200 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-amber-600 font-semibold uppercase tracking-wider mb-1">
+            <span>Partially Paid</span>
+            <span className="bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full text-xs font-bold">{partialInvoices.length}</span>
+          </div>
+          <p className="text-xl font-bold text-amber-600">{formatPeso(partialTotal)}</p>
+          <p className="text-xs text-amber-500 mt-1">Remaining balance on partials</p>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setStatusFilter(statusFilter === 'Paid' ? '' : 'Paid')}
+          className={`p-4 rounded-xl border text-left transition-all ${
+            statusFilter === 'Paid'
+              ? 'bg-green-50 border-green-400 shadow-sm ring-2 ring-green-200'
+              : 'bg-white border-gray-200 hover:border-green-200 shadow-sm'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs text-green-700 font-semibold uppercase tracking-wider mb-1">
+            <span>Fully Paid</span>
+            <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded-full text-xs font-bold">{paidInvoices.length}</span>
+          </div>
+          <p className="text-xl font-bold text-green-700">{formatPeso(paidTotal)}</p>
+          <p className="text-xs text-green-600 mt-1">Total collections applied</p>
+        </button>
+      </div>
+
+      {/* Filters & Search */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Search Customer Store or Invoice #</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Type store name or INV-..."
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+            />
+          </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Status Filter</label>
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+            >
               <option value="">All Statuses</option>
               <option value="Unpaid">Unpaid</option>
               <option value="Partial">Partial</option>
@@ -505,62 +689,82 @@ function ReceiptsTab() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Start Date</label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">End Date</label>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500" />
-          </div>
-          <div className="flex items-end">
-            <button onClick={fetchInvoices}
-              className="w-full bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-4 py-2 text-sm font-semibold transition-colors">
-              Search
-            </button>
+            <input
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+            />
           </div>
         </div>
       </div>
 
-      {/* Table */}
+      {/* Invoices Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? <Spinner /> : (
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Invoice #', 'Date', 'Customer', 'Delivery Run', 'Amount', 'BO Deduction', 'Collected', 'Applied', 'Balance', 'Status', 'Actions'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  {['Invoice #', 'Date', 'Customer Store', 'Delivery Run', 'Total Bill', 'BO Credit', 'Applied Paid', 'Balance Due', 'Status', 'Quick Action'].map(h => (
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
-                {invoices.length === 0 ? (
-                  <tr><td colSpan={11} className="text-center py-10 text-gray-400">No invoices found.</td></tr>
-                ) : invoices.map(inv => (
-                  <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-4 py-3 text-sm font-mono font-semibold text-rose-700">{inv.invoiceNumber}</td>
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} className="text-center py-12 text-gray-400">
+                      <p className="text-base font-semibold">No invoices match your search.</p>
+                      <p className="text-xs text-gray-400 mt-1">Try clearing your filters or search keyword.</p>
+                    </td>
+                  </tr>
+                ) : filteredInvoices.map(inv => (
+                  <tr key={inv.id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="px-4 py-3 text-sm font-mono font-bold text-rose-700">{inv.invoiceNumber}</td>
                     <td className="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">{formatDate(inv.createdAt)}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{inv.customer.name}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-gray-900">{inv.customer.name}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{inv.deliveryRun?.runNumber ?? '—'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap">{formatPeso(inv.totalAmount)}</td>
-                    <td className="px-4 py-3 text-sm text-rose-700 text-right whitespace-nowrap">{inv.boDeductionAmount > 0 ? `−${formatPeso(inv.boDeductionAmount)}` : '—'}</td>
-                    <td className="px-4 py-3 text-sm text-green-700 text-right whitespace-nowrap">{formatPeso(inv.amountCollected)}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600 text-right whitespace-nowrap">{formatPeso(inv.paidAmount)}</td>
-                    <td className={`px-4 py-3 text-sm text-right font-semibold whitespace-nowrap ${inv.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    <td className="px-4 py-3 text-sm text-gray-900 text-right whitespace-nowrap font-medium">{formatPeso(inv.totalAmount)}</td>
+                    <td className="px-4 py-3 text-sm text-rose-700 text-right whitespace-nowrap font-medium">
+                      {inv.boDeductionAmount > 0 ? `−${formatPeso(inv.boDeductionAmount)}` : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-green-700 text-right whitespace-nowrap font-semibold">
+                      {formatPeso(inv.paidAmount)}
+                    </td>
+                    <td className={`px-4 py-3 text-sm text-right font-bold whitespace-nowrap ${inv.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
                       {formatPeso(inv.balance)}
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={inv.status} /></td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        {inv.balance > 0 && (
-                          <button onClick={() => setPaymentTarget(inv)}
-                            className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-2 py-1 rounded font-medium transition-colors whitespace-nowrap">
-                            Pay
+                    <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={inv.status} /></td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        {inv.balance > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setPaymentTarget(inv)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm transition-all flex items-center gap-1"
+                          >
+                            <span>💳 Pay Balance</span>
                           </button>
+                        ) : (
+                          <span className="text-xs text-green-700 font-bold bg-green-50 border border-green-200 px-2.5 py-1 rounded-lg">
+                            ✓ Settled
+                          </span>
                         )}
-                        <button onClick={() => setPrintTarget(inv)}
-                          className="border border-gray-300 hover:bg-gray-50 text-gray-700 text-xs px-2 py-1 rounded font-medium transition-colors whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setPrintTarget(inv)}
+                          className="border border-gray-300 hover:bg-gray-100 text-gray-700 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors"
+                        >
                           Print
                         </button>
                       </div>
@@ -803,30 +1007,237 @@ function CollectionTab() {
         )}
       </div>
 
-      {reconciliationDraft && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !submitting && setReconciliationDraft(null)}>
-        <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={event => event.stopPropagation()}>
-          <div className="flex items-center justify-between border-b px-6 py-4"><div><h3 className="text-lg font-bold text-gray-900">Reconcile {reconciliationDraft.runNumber}</h3><p className="text-sm text-gray-500">{reconciliationDraft.run?.area || reconciliationDraft.run?.route}</p></div><button type="button" disabled={submitting} onClick={() => setReconciliationDraft(null)} className="text-gray-400 hover:text-gray-700">Close</button></div>
-          <div className="space-y-4 p-6">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {[
-                ['Expected cash', reconciliationDraft.summary?.expectedCash],
-                ['GCash', reconciliationDraft.summary?.totalGcash],
-                ['Bank transfer', reconciliationDraft.summary?.totalBankTransfer],
-                ['Cleared checks', reconciliationDraft.summary?.totalClearedChecks],
-                ['Pending checks', reconciliationDraft.summary?.totalPendingChecks],
-                ['Outstanding credit', reconciliationDraft.summary?.totalOutstandingCredit],
-              ].map(([label, value]) => <div key={String(label)} className="rounded-lg border bg-gray-50 p-3"><p className="text-xs text-gray-500">{label}</p><p className="mt-1 font-bold text-gray-800">{formatPeso(Number(value) || 0)}</p></div>)}
+      {reconciliationDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !submitting && setReconciliationDraft(null)}>
+          <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl border border-gray-100" onClick={event => event.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b px-6 py-4 bg-gradient-to-r from-rose-50 via-white to-orange-50 rounded-t-2xl">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs font-bold bg-rose-600 text-white px-2 py-0.5 rounded">
+                    {reconciliationDraft.runNumber}
+                  </span>
+                  <h3 className="text-lg font-bold text-gray-900">Delivery Run End-of-Day Reconciliation</h3>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Route: <strong>{reconciliationDraft.run?.area || reconciliationDraft.run?.route || reconciliationDraft.route}</strong>
+                  {reconciliationDraft.deliveryDate && ` · Date: ${formatDate(reconciliationDraft.deliveryDate)}`}
+                  {reconciliationDraft.driver && ` · Driver: ${reconciliationDraft.driver}`}
+                  {reconciliationDraft.collector && ` · Collector: ${reconciliationDraft.collector}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setReconciliationDraft(null)}
+                className="text-gray-400 hover:text-gray-700 text-2xl font-bold p-1 leading-none"
+              >
+                ×
+              </button>
             </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-              Loaded {reconciliationDraft.summary?.totalLoadedUnits || 0} units · Delivered {reconciliationDraft.summary?.totalDeliveredAccepted || 0} · Intact returns {reconciliationDraft.summary?.totalIntactReturned || 0} · BO {reconciliationDraft.summary?.totalBoReturned || 0} · Missing {reconciliationDraft.summary?.totalMissingUnaccounted || 0}
+
+            <div className="space-y-5 p-6">
+              {/* How Reconciliation Works Guide Banner */}
+              <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 text-xs text-blue-900">
+                <p className="font-bold mb-1 flex items-center gap-1.5">
+                  <span>ℹ️</span> What happens when you reconcile this run?
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-blue-800">
+                  <p>• <strong>Intact returns</strong> are automatically returned to saleable warehouse stock.</p>
+                  <p>• <strong>Bad Order (BO)</strong> items are safely moved to quarantine stock for Unilever credit.</p>
+                  <p>• <strong>All stops and bookings</strong> are marked completed / delivered.</p>
+                  <p>• <strong>Cash collections and credit balances</strong> are permanently recorded in accounts.</p>
+                </div>
+              </div>
+
+              {/* Step 1: Physical Van Stock Breakdown */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                    <span>📦</span> Step 1: Van Physical Stock Audit
+                  </h4>
+                  <span className="text-xs text-gray-500 font-mono">
+                    Loaded: {reconciliationDraft.summary?.totalLoadedUnits || 0} pcs
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <div className="rounded-lg bg-white p-3 border border-gray-200 shadow-sm text-center">
+                    <p className="text-xs text-gray-500 font-medium">Van Loaded</p>
+                    <p className="text-lg font-bold text-gray-900 mt-0.5">{reconciliationDraft.summary?.totalLoadedUnits || 0}</p>
+                    <p className="text-[10px] text-gray-400">Total units dispatched</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3 border border-green-200 shadow-sm text-center">
+                    <p className="text-xs text-green-700 font-medium">Delivered Good</p>
+                    <p className="text-lg font-bold text-green-700 mt-0.5">{reconciliationDraft.summary?.totalDeliveredAccepted || 0}</p>
+                    <p className="text-[10px] text-green-600">Accepted by stores</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3 border border-blue-200 shadow-sm text-center">
+                    <p className="text-xs text-blue-700 font-medium">Intact Returns</p>
+                    <p className="text-lg font-bold text-blue-700 mt-0.5">{reconciliationDraft.summary?.totalIntactReturned || 0}</p>
+                    <p className="text-[10px] text-blue-600">Restocked to bodega</p>
+                  </div>
+                  <div className="rounded-lg bg-white p-3 border border-rose-200 shadow-sm text-center">
+                    <p className="text-xs text-rose-700 font-medium">Bad Order (BO)</p>
+                    <p className="text-lg font-bold text-rose-700 mt-0.5">{reconciliationDraft.summary?.totalBoReturned || 0}</p>
+                    <p className="text-[10px] text-rose-600">Moved to quarantine</p>
+                  </div>
+                  <div className={`rounded-lg bg-white p-3 border shadow-sm text-center ${
+                    (reconciliationDraft.summary?.totalMissingUnaccounted || 0) > 0 ? 'border-red-400 bg-red-50' : 'border-gray-200'
+                  }`}>
+                    <p className={`text-xs font-medium ${(reconciliationDraft.summary?.totalMissingUnaccounted || 0) > 0 ? 'text-red-700 font-bold' : 'text-gray-500'}`}>Missing / Short</p>
+                    <p className={`text-lg font-bold mt-0.5 ${(reconciliationDraft.summary?.totalMissingUnaccounted || 0) > 0 ? 'text-red-700' : 'text-gray-800'}`}>
+                      {reconciliationDraft.summary?.totalMissingUnaccounted || 0}
+                    </p>
+                    <p className="text-[10px] text-gray-400">Unaccounted units</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2: Financial & Cash Breakdown */}
+              <div className="rounded-xl border border-gray-200 bg-gray-50/50 p-4">
+                <h4 className="text-sm font-bold text-gray-800 flex items-center gap-1.5 mb-3">
+                  <span>💵</span> Step 2: Financial Collections & Accounts Receivable
+                </h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="rounded-lg border bg-white p-3 shadow-sm">
+                    <p className="text-xs text-gray-500">Gross Delivered Value</p>
+                    <p className="mt-1 font-bold text-gray-900">{formatPeso(Number(reconciliationDraft.summary?.totalBillableAmount) || 0)}</p>
+                    <p className="text-[10px] text-gray-400">Total bills issued</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-sm">
+                    <p className="text-xs text-amber-700 font-medium">Store Credit (Unpaid)</p>
+                    <p className="mt-1 font-bold text-amber-700">{formatPeso(Number(reconciliationDraft.summary?.totalOutstandingCredit) || 0)}</p>
+                    <p className="text-[10px] text-amber-600">Remaining store balances</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-sm">
+                    <p className="text-xs text-blue-700 font-medium">Digital (GCash)</p>
+                    <p className="mt-1 font-bold text-blue-700">{formatPeso(Number(reconciliationDraft.summary?.totalGcash) || 0)}</p>
+                    <p className="text-[10px] text-blue-600">Direct GCash transfer</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-sm">
+                    <p className="text-xs text-purple-700 font-medium">Bank Transfers</p>
+                    <p className="mt-1 font-bold text-purple-700">{formatPeso(Number(reconciliationDraft.summary?.totalBankTransfer) || 0)}</p>
+                    <p className="text-[10px] text-purple-600">Direct deposit / online</p>
+                  </div>
+                  <div className="rounded-lg border bg-white p-3 shadow-sm">
+                    <p className="text-xs text-indigo-700 font-medium">Bank Checks</p>
+                    <p className="mt-1 font-bold text-indigo-700">
+                      {formatPeso(Number(reconciliationDraft.summary?.totalChecks) || 0)}
+                    </p>
+                    <p className="text-[10px] text-indigo-600">Cleared: {formatPeso(Number(reconciliationDraft.summary?.totalClearedChecks) || 0)}</p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 shadow-sm">
+                    <p className="text-xs text-emerald-800 font-semibold">Expected Cash From Route</p>
+                    <p className="mt-1 font-bold text-emerald-700 text-lg">{formatPeso(Number(reconciliationDraft.expectedCash) || 0)}</p>
+                    <p className="text-[10px] text-emerald-600">Cash driver must turn in</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3: Cash Turn-in & Variance Calculator */}
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                    <span>💰</span> Step 3: Actual Route Cash Counted
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setActualCash(String(Number(reconciliationDraft.expectedCash) || 0))}
+                    className="text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold px-2.5 py-1 rounded-md transition-colors"
+                  >
+                    ⚡ Exact Match ({formatPeso(Number(reconciliationDraft.expectedCash) || 0)})
+                  </button>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 font-bold text-gray-500">₱</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={actualCash}
+                    onChange={event => setActualCash(event.target.value)}
+                    className="w-full rounded-lg border border-gray-300 pl-8 pr-4 py-2.5 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                {/* Dynamic Live Variance Display */}
+                {(() => {
+                  const counted = Number(actualCash) || 0;
+                  const expected = Number(reconciliationDraft.expectedCash) || 0;
+                  const variance = Number((counted - expected).toFixed(2));
+                  if (variance === 0) {
+                    return (
+                      <div className="rounded-lg bg-green-50 border border-green-200 p-3 text-xs text-green-800 font-medium flex items-center justify-between">
+                        <span>✅ <strong>Balanced!</strong> Cash counted matches the expected route cash collection exactly (₱0.00 variance).</span>
+                        <span className="bg-green-600 text-white font-bold px-2 py-0.5 rounded text-[11px]">BALANCED</span>
+                      </div>
+                    );
+                  }
+                  if (variance > 0) {
+                    return (
+                      <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 font-medium flex items-center justify-between">
+                        <span>ℹ️ <strong>Cash Overage:</strong> Counted cash is higher than expected by +{formatPeso(variance)}.</span>
+                        <span className="bg-blue-600 text-white font-bold px-2 py-0.5 rounded text-[11px]">+{formatPeso(variance)}</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-800 font-medium flex items-center justify-between">
+                      <span>⚠️ <strong>Cash Shortage:</strong> Counted cash is short by −{formatPeso(Math.abs(variance))}.</span>
+                      <span className="bg-red-600 text-white font-bold px-2 py-0.5 rounded text-[11px]">−{formatPeso(Math.abs(variance))}</span>
+                    </div>
+                  );
+                })()}
+
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-gray-700">Notes / Reconciliation Remarks (optional)</label>
+                  <textarea
+                    value={reconciliationNotes}
+                    onChange={event => setReconciliationNotes(event.target.value)}
+                    rows={2}
+                    placeholder="Enter any discrepancy remarks or delivery notes here..."
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                </div>
+
+                {isAdmin && (
+                  <label className="flex items-start gap-2.5 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={approveException}
+                      onChange={event => setApproveException(event.target.checked)}
+                      className="mt-0.5 rounded border-gray-300 text-rose-600 focus:ring-rose-500"
+                    />
+                    <span>
+                      <strong>Admin Instant Finalization:</strong> Authorize and finalize this delivery run immediately even if there is a cash or stock discrepancy.
+                    </span>
+                  </label>
+                )}
+              </div>
             </div>
-            <div><label className="mb-1 block text-sm font-semibold text-gray-700">Actual cash counted</label><input type="number" min={0} step="0.01" value={actualCash} onChange={event => setActualCash(event.target.value)} className="w-full rounded-lg border px-3 py-2" /><p className="mt-1 text-xs text-gray-500">Expected cash: {formatPeso(Number(reconciliationDraft.expectedCash) || 0)} · Variance: {formatPeso((Number(actualCash) || 0) - (Number(reconciliationDraft.expectedCash) || 0))}</p></div>
-            <div><label className="mb-1 block text-sm font-semibold text-gray-700">Notes or discrepancy reason</label><textarea value={reconciliationNotes} onChange={event => setReconciliationNotes(event.target.value)} rows={3} className="w-full rounded-lg border px-3 py-2" /></div>
-            {isAdmin && <label className="flex items-start gap-2 rounded-lg border p-3 text-sm text-gray-700"><input type="checkbox" checked={approveException} onChange={event => setApproveException(event.target.checked)} className="mt-0.5" /><span>Approve any cash or stock discrepancy now and finalize this run.</span></label>}
+
+            {/* Modal Footer */}
+            <div className="flex justify-end gap-2 border-t px-6 py-4 bg-gray-50 rounded-b-2xl">
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setReconciliationDraft(null)}
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={submitReconciliation}
+                className="rounded-lg bg-rose-600 hover:bg-rose-700 px-5 py-2 text-sm font-bold text-white shadow-sm disabled:opacity-50 transition-colors"
+              >
+                {submitting ? 'Saving & Updating Stock…' : 'Save & Finalize Reconciliation'}
+              </button>
+            </div>
           </div>
-          <div className="flex justify-end gap-2 border-t px-6 py-4"><button type="button" disabled={submitting} onClick={() => setReconciliationDraft(null)} className="rounded-lg border px-4 py-2 text-sm">Cancel</button><button type="button" disabled={submitting} onClick={submitReconciliation} className="rounded-lg bg-rose-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">{submitting ? 'Saving…' : 'Save reconciliation'}</button></div>
         </div>
-      </div>}
+      )}
     </div>
   );
 }

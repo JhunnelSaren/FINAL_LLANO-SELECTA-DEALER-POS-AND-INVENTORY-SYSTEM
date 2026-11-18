@@ -3,6 +3,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/common/Toast';
 import { formatPeso, formatDate, formatDateTime } from '../utils/formatters';
 import { getAuthToken } from '../utils/api';
+import { CheckCircle2, XCircle, Clock, AlertTriangle, ShieldCheck, Check, X, Bell, RefreshCw, Send } from 'lucide-react';
+import type { StockAdjustmentRequest } from '../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,7 +55,7 @@ interface LowStockProduct {
   deficit: number;
 }
 
-type SubTab = 'stock' | 'movements' | 'damaged' | 'lowstock';
+type SubTab = 'stock' | 'requests' | 'movements' | 'damaged' | 'lowstock';
 
 const MOVEMENT_TYPES = [
   'Supplier Receiving',
@@ -148,13 +150,29 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ─── Stock on Hand Tab ────────────────────────────────────────────────────────
 
-function StockOnHand({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg: string, type?: 'success' | 'error') => void }) {
+function StockOnHand({
+  isAdmin,
+  showToast,
+  onRequestCreated,
+}: {
+  isAdmin: boolean;
+  showToast: (msg: string, type?: 'success' | 'error') => void;
+  onRequestCreated?: () => void;
+}) {
   const [products, setProducts] = useState<Product[]>([]);
   const [filtered, setFiltered] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Adjust modal
+  // Staff Stock Edit Request modal (Staff asks Admin permission)
+  const [requestTarget, setRequestTarget] = useState<Product | null>(null);
+  const [requestType, setRequestType] = useState<'IN' | 'OUT'>('IN');
+  const [requestQty, setRequestQty] = useState('');
+  const [requestReason, setRequestReason] = useState('');
+  const [requestNotes, setRequestNotes] = useState('');
+  const [submittingRequest, setSubmittingRequest] = useState(false);
+
+  // Adjust modal (Admin direct adjustment)
   const [adjustTarget, setAdjustTarget] = useState<Product | null>(null);
   const [adjustType, setAdjustType] = useState<'ADJUSTMENT_IN' | 'ADJUSTMENT_OUT'>('ADJUSTMENT_IN');
   const [adjustQty, setAdjustQty] = useState('');
@@ -215,6 +233,57 @@ function StockOnHand({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg
       showToast(e.message ?? 'Export failed', 'error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const openStaffRequest = (p: Product) => {
+    setRequestTarget(p);
+    setRequestType('IN');
+    setRequestQty('');
+    setRequestReason('');
+    setRequestNotes('');
+  };
+
+  const submitStaffRequest = async () => {
+    if (!requestTarget) return;
+    const qty = Number(requestQty);
+    if (!requestQty || isNaN(qty) || qty <= 0 || !Number.isInteger(qty)) {
+      showToast('Enter a valid whole quantity greater than 0', 'error');
+      return;
+    }
+    if (!requestReason.trim()) {
+      showToast('Please provide a reason for the stock edit request', 'error');
+      return;
+    }
+    const change = requestType === 'IN' ? qty : -qty;
+    const proposed = requestTarget.stockOnHand + change;
+    if (proposed < 0) {
+      showToast(`Cannot deduct ${qty} units. Current stock on hand is ${requestTarget.stockOnHand}.`, 'error');
+      return;
+    }
+
+    setSubmittingRequest(true);
+    try {
+      const res = await apiFetch('/api/inventory/adjustment-requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          productId: requestTarget.id,
+          requestedChange: change,
+          reason: requestReason.trim(),
+          notes: requestNotes.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to submit adjustment request');
+      }
+      showToast('Stock edit request submitted to Admin. Waiting for Admin permission.', 'success');
+      setRequestTarget(null);
+      if (onRequestCreated) onRequestCreated();
+    } catch (e: any) {
+      showToast(e.message || 'Failed to submit request', 'error');
+    } finally {
+      setSubmittingRequest(false);
     }
   };
 
@@ -335,18 +404,29 @@ function StockOnHand({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => openEdit(p)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:border-rose-400 hover:text-rose-700 text-gray-600 font-medium transition"
-                      >
-                        Edit
-                      </button>
-                      {isAdmin && (
+                      {isAdmin ? (
+                        <>
+                          <button
+                            onClick={() => openEdit(p)}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 hover:border-rose-400 hover:text-rose-700 text-gray-600 font-medium transition"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => openAdjust(p)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium transition"
+                          >
+                            Adjust
+                          </button>
+                        </>
+                      ) : (
                         <button
-                          onClick={() => openAdjust(p)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-medium transition"
+                          onClick={() => openStaffRequest(p)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95"
+                          title="Ask Admin permission to edit stock for this product"
                         >
-                          Adjust
+                          <Send className="w-3 h-3" />
+                          <span>Edit Stock (Ask Admin)</span>
                         </button>
                       )}
                     </div>
@@ -459,6 +539,629 @@ function StockOnHand({ isAdmin, showToast }: { isAdmin: boolean; showToast: (msg
                 className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg py-2 text-sm font-semibold transition disabled:opacity-60"
               >
                 {editing ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Staff Stock Edit Request Modal (Requires Admin Permission) */}
+      {requestTarget && (
+        <Modal title={`Request Stock Edit — ${requestTarget.name}`} onClose={() => setRequestTarget(null)}>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-rose-200 bg-rose-50/80 p-3.5 text-xs text-rose-800">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Dealership Policy: Admin Permission Required</p>
+                  <p className="mt-0.5 text-rose-700 leading-relaxed">
+                    Staff cannot directly edit physical stock counts. Submitting this request will immediately notify the Dealer Admin to <strong>Allow</strong> or <strong>Deny</strong> your stock modification.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs text-gray-500 mb-2">
+                Current Stock on Hand: <strong className="text-gray-800">{requestTarget.stockOnHand}</strong> units
+              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Adjustment Type</label>
+              <div className="flex gap-4">
+                {(['IN', 'OUT'] as const).map(t => (
+                  <label key={t} className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                    <input
+                      type="radio"
+                      name="staffReqType"
+                      value={t}
+                      checked={requestType === t}
+                      onChange={() => setRequestType(t)}
+                      className="accent-rose-600 h-4 w-4"
+                    />
+                    {t === 'IN' ? 'Increase Stock (+)' : 'Deduct Stock (-)'}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Quantity</label>
+              <input
+                type="number"
+                min={1}
+                value={requestQty}
+                onChange={e => setRequestQty(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300"
+                placeholder="Enter whole quantity to adjust"
+              />
+              {requestQty && Number(requestQty) > 0 && (
+                <div className="mt-2.5 rounded-lg bg-slate-50 border border-slate-200 px-3.5 py-2 text-xs text-slate-700 flex justify-between items-center">
+                  <span>Current: <strong>{requestTarget.stockOnHand}</strong></span>
+                  <span className={requestType === 'IN' ? 'text-emerald-600 font-bold' : 'text-rose-600 font-bold'}>
+                    {requestType === 'IN' ? `+${requestQty}` : `-${requestQty}`}
+                  </span>
+                  <span className="font-extrabold text-slate-900">
+                    Proposed: {requestType === 'IN' ? requestTarget.stockOnHand + Number(requestQty) : requestTarget.stockOnHand - Number(requestQty)} units
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reason for Stock Edit <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={requestReason}
+                onChange={e => setRequestReason(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300"
+                placeholder="e.g. Physical inventory count discrepancy"
+              />
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {['Physical Count Discrepancy', 'Freezer Melt / Damaged', 'Supplier Truck Shortage', 'Route Return Discrepancy'].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setRequestReason(s)}
+                    className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded transition"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Staff Notes (Optional)</label>
+              <textarea
+                value={requestNotes}
+                onChange={e => setRequestNotes(e.target.value)}
+                rows={2}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-300"
+                placeholder="Additional details for the Dealer Admin"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setRequestTarget(null)}
+                className="flex-1 border border-gray-300 text-gray-600 rounded-lg py-2 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitStaffRequest}
+                disabled={submittingRequest || !requestQty || Number(requestQty) <= 0 || !requestReason.trim()}
+                className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg py-2 text-sm font-semibold transition disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20"
+              >
+                {submittingRequest ? (
+                  <span>Submitting...</span>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Ask Admin Permission</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── Stock Requests Tab (Admin permission & approval for staff stock editing) ───
+
+function StockRequests({
+  isAdmin,
+  showToast,
+  onPendingCountChange,
+  onStockUpdated,
+}: {
+  isAdmin: boolean;
+  showToast: (msg: string, type?: 'success' | 'error') => void;
+  onPendingCountChange?: (count: number) => void;
+  onStockUpdated?: () => void;
+}) {
+  const [requests, setRequests] = useState<StockAdjustmentRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'Pending' | 'Approved' | 'Rejected'>('ALL');
+  const [search, setSearch] = useState('');
+
+  // Admin Allow Modal state
+  const [allowTarget, setAllowTarget] = useState<StockAdjustmentRequest | null>(null);
+  const [allowNotes, setAllowNotes] = useState('');
+  const [actionBusy, setActionBusy] = useState(false);
+
+  // Admin Deny Modal state
+  const [denyTarget, setDenyTarget] = useState<StockAdjustmentRequest | null>(null);
+  const [denyReason, setDenyReason] = useState('');
+
+  const loadRequests = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/inventory/adjustment-requests');
+      if (!res.ok) throw new Error('Failed to load stock adjustment requests');
+      const data = await res.json();
+      const rows: StockAdjustmentRequest[] = Array.isArray(data) ? data : [];
+      setRequests(rows);
+      const pendingCount = rows.filter(r => r.status === 'Pending').length;
+      if (onPendingCountChange) onPendingCountChange(pendingCount);
+    } catch (e: any) {
+      showToast(e.message || 'Could not load stock requests', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast, onPendingCountChange]);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
+
+  const handleAllow = async () => {
+    if (!allowTarget) return;
+    setActionBusy(true);
+    try {
+      const res = await apiFetch(`/api/inventory/adjustment-requests/${allowTarget.id}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ notes: allowNotes.trim() || undefined }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to approve stock adjustment');
+      }
+      showToast(`Permission granted! Stock for "${allowTarget.productName}" updated to ${allowTarget.proposedStock} units.`, 'success');
+      setAllowTarget(null);
+      setAllowNotes('');
+      await loadRequests();
+      if (onStockUpdated) onStockUpdated();
+    } catch (e: any) {
+      showToast(e.message || 'Failed to approve request', 'error');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleDeny = async () => {
+    if (!denyTarget) return;
+    if (!denyReason.trim()) {
+      showToast('Please specify a reason for denying this request', 'error');
+      return;
+    }
+    setActionBusy(true);
+    try {
+      const res = await apiFetch(`/api/inventory/adjustment-requests/${denyTarget.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: denyReason.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to deny stock adjustment');
+      }
+      showToast(`Stock edit request for "${denyTarget.productName}" denied.`, 'success');
+      setDenyTarget(null);
+      setDenyReason('');
+      await loadRequests();
+    } catch (e: any) {
+      showToast(e.message || 'Failed to deny request', 'error');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const filteredRequests = requests.filter(r => {
+    if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        r.productName?.toLowerCase().includes(q) ||
+        r.productId?.toLowerCase().includes(q) ||
+        r.staffName?.toLowerCase().includes(q) ||
+        r.reason?.toLowerCase().includes(q) ||
+        r.id?.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
+  const pendingTotal = requests.filter(r => r.status === 'Pending').length;
+  const approvedTotal = requests.filter(r => r.status === 'Approved').length;
+  const rejectedTotal = requests.filter(r => r.status === 'Rejected').length;
+
+  return (
+    <div className="space-y-6">
+      {/* Informational Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 p-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-xl bg-white text-rose-600 shadow-sm">
+            <ShieldCheck className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              {isAdmin ? 'Staff Stock Adjustment Permissions & Approvals' : 'My Stock Edit Requests & Status'}
+            </h3>
+            <p className="text-xs text-slate-600 mt-0.5">
+              {isAdmin
+                ? 'Review stock edit requests submitted by staff members. Allow or deny stock modifications before physical inventory is changed.'
+                : 'Track the status of your stock edit requests. Admin decisions (Allowed or Denied) appear here in real time.'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={loadRequests}
+          disabled={loading}
+          className="self-start sm:self-center inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition shadow-sm"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-rose-600' : ''}`} />
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-800">Pending Review</span>
+            <Clock className="h-4 w-4 text-amber-600" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-amber-900 tabular-nums">{pendingTotal}</p>
+          <p className="text-[10px] text-amber-700 mt-0.5">Requires Admin decision</p>
+        </div>
+
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-emerald-800">Allowed / Approved</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-emerald-900 tabular-nums">{approvedTotal}</p>
+          <p className="text-[10px] text-emerald-700 mt-0.5">Stock updated in system</p>
+        </div>
+
+        <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-rose-800">Denied / Rejected</span>
+            <XCircle className="h-4 w-4 text-rose-600" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-rose-900 tabular-nums">{rejectedTotal}</p>
+          <p className="text-[10px] text-rose-700 mt-0.5">Stock left unchanged</p>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-600">Total Requests</span>
+            <Bell className="h-4 w-4 text-slate-400" />
+          </div>
+          <p className="mt-2 text-2xl font-black text-slate-900 tabular-nums">{requests.length}</p>
+          <p className="text-[10px] text-slate-500 mt-0.5">Logged permission audit</p>
+        </div>
+      </div>
+
+      {/* Toolbar: Search and Filter Pills */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+        <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto p-1 bg-slate-100 rounded-xl">
+          {[
+            { id: 'ALL', label: 'All Requests' },
+            { id: 'Pending', label: `Pending (${pendingTotal})` },
+            { id: 'Approved', label: `Allowed (${approvedTotal})` },
+            { id: 'Rejected', label: `Denied (${rejectedTotal})` },
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setFilterStatus(f.id as any)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                filterStatus === f.id
+                  ? 'bg-white text-rose-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        <input
+          type="text"
+          placeholder="Search by product, staff, or reason…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full sm:w-72 border border-gray-300 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-rose-300 bg-white"
+        />
+      </div>
+
+      {/* Requests Table */}
+      {loading ? (
+        <Spinner />
+      ) : filteredRequests.length === 0 ? (
+        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center">
+          <ShieldCheck className="mx-auto h-12 w-12 text-slate-300" />
+          <h4 className="mt-3 text-sm font-bold text-slate-800">No stock requests found</h4>
+          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+            {filterStatus === 'Pending'
+              ? 'There are currently no pending stock adjustment requests waiting for Admin review.'
+              : 'No stock edit requests match your current search or filter.'}
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 shadow-sm bg-white">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 text-slate-700 text-xs uppercase tracking-wide border-b border-gray-200">
+              <tr>
+                <th className="px-4 py-3 text-left font-semibold">Status</th>
+                <th className="px-4 py-3 text-left font-semibold">Product</th>
+                <th className="px-4 py-3 text-left font-semibold">Staff Member</th>
+                <th className="px-4 py-3 text-left font-semibold">Stock Adjustment</th>
+                <th className="px-4 py-3 text-left font-semibold">Reason &amp; Notes</th>
+                <th className="px-4 py-3 text-left font-semibold">Requested At</th>
+                <th className="px-4 py-3 text-left font-semibold">Admin Decision</th>
+                <th className="px-4 py-3 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filteredRequests.map((req) => {
+                const isPending = req.status === 'Pending';
+                const isApproved = req.status === 'Approved';
+                const isRejected = req.status === 'Rejected';
+                const change = Number(req.requestedChange);
+
+                return (
+                  <tr key={req.id} className="hover:bg-rose-50/30 transition">
+                    {/* Status */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {isPending && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-ping" />
+                          Pending
+                        </span>
+                      )}
+                      {isApproved && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                          <Check className="h-3 w-3" />
+                          Allowed
+                        </span>
+                      )}
+                      {isRejected && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                          <X className="h-3 w-3" />
+                          Denied
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Product */}
+                    <td className="px-4 py-3">
+                      <p className="font-bold text-slate-800">{req.productName}</p>
+                      <p className="font-mono text-[11px] text-slate-400">{req.productId}</p>
+                    </td>
+
+                    {/* Staff Member */}
+                    <td className="px-4 py-3">
+                      <p className="font-semibold text-slate-700">{req.staffName}</p>
+                    </td>
+
+                    {/* Stock Adjustment Calculation */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 tabular-nums">
+                          {req.currentStock}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-black tabular-nums ${
+                          change >= 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}>
+                          {change >= 0 ? `+${change}` : change}
+                        </span>
+                        <span className="text-xs text-slate-400">&rarr;</span>
+                        <span className="text-xs font-extrabold text-slate-900 tabular-nums">
+                          {req.proposedStock}
+                        </span>
+                      </div>
+                    </td>
+
+                    {/* Reason & Notes */}
+                    <td className="px-4 py-3 max-w-xs">
+                      <p className="text-xs font-semibold text-slate-800">{req.reason}</p>
+                      {req.notes && (
+                        <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">Note: {req.notes}</p>
+                      )}
+                    </td>
+
+                    {/* Requested At */}
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">
+                      {new Date(req.createdAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}
+                    </td>
+
+                    {/* Admin Decision */}
+                    <td className="px-4 py-3 max-w-xs text-xs">
+                      {isPending ? (
+                        <span className="text-slate-400 italic">Awaiting Admin decision</span>
+                      ) : (
+                        <div>
+                          <p className="font-medium text-slate-800">
+                            {isApproved ? 'Allowed by' : 'Denied by'}: <strong>{req.adminName || 'Admin'}</strong>
+                          </p>
+                          {req.adminNotes && (
+                            <p className="text-[11px] text-slate-500 mt-0.5 italic">"{req.adminNotes}"</p>
+                          )}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Actions */}
+                    <td className="px-4 py-3 whitespace-nowrap text-right">
+                      {isPending && isAdmin ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAllowTarget(req);
+                              setAllowNotes('');
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700 transition shadow-sm active:scale-95"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Allow</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDenyTarget(req);
+                              setDenyReason('');
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 transition active:scale-95"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            <span>Deny</span>
+                          </button>
+                        </div>
+                      ) : isPending && !isAdmin ? (
+                        <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">
+                          Waiting for Admin
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">Completed</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ADMIN MODAL: Allow Stock Edit */}
+      {allowTarget && (
+        <Modal title={`Allow Stock Edit — ${allowTarget.productName}`} onClose={() => setAllowTarget(null)}>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-900">
+              <p className="font-bold">Approve Stock Adjustment</p>
+              <p className="mt-1">
+                You are allowing staff member <strong>{allowTarget.staffName}</strong> to adjust physical inventory.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Product:</span>
+                <span className="font-bold text-slate-800">{allowTarget.productName} ({allowTarget.productId})</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Current Stock on Hand:</span>
+                <span className="font-semibold text-slate-800">{allowTarget.currentStock} units</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Requested Adjustment:</span>
+                <span className="font-bold text-emerald-700">
+                  {allowTarget.requestedChange > 0 ? `+${allowTarget.requestedChange}` : allowTarget.requestedChange} units
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold">
+                <span className="text-slate-700">New Physical Stock:</span>
+                <span className="text-rose-700 text-sm">{allowTarget.proposedStock} units</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5">
+                <span className="text-slate-500">Staff Reason:</span>
+                <span className="font-medium text-slate-800">{allowTarget.reason}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Admin Approval Notes (Optional)
+              </label>
+              <input
+                type="text"
+                value={allowNotes}
+                onChange={e => setAllowNotes(e.target.value)}
+                placeholder="e.g. Verified physical recount in bodega freezer"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-emerald-400"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setAllowTarget(null)}
+                className="flex-1 rounded-xl border border-slate-300 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAllow}
+                disabled={actionBusy}
+                className="flex-1 rounded-xl bg-emerald-600 py-2.5 text-xs font-bold text-white hover:bg-emerald-700 transition disabled:opacity-60 flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20"
+              >
+                {actionBusy ? 'Processing...' : 'Confirm & Allow Edit'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ADMIN MODAL: Deny Stock Edit */}
+      {denyTarget && (
+        <Modal title={`Deny Stock Edit — ${denyTarget.productName}`} onClose={() => setDenyTarget(null)}>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-900">
+              <p className="font-bold">Deny Stock Modification</p>
+              <p className="mt-1">
+                You are denying the request from <strong>{denyTarget.staffName}</strong>. The stock on hand will remain at <strong>{denyTarget.currentStock} units</strong>.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Reason for Denial <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                required
+                value={denyReason}
+                onChange={e => setDenyReason(e.target.value)}
+                placeholder="e.g. Recount verified accurate with delivery manifest; no deduction warranted."
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-400"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setDenyTarget(null)}
+                className="flex-1 rounded-xl border border-slate-300 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeny}
+                disabled={actionBusy || !denyReason.trim()}
+                className="flex-1 rounded-xl bg-rose-600 py-2.5 text-xs font-bold text-white hover:bg-rose-700 transition disabled:opacity-60 shadow-md shadow-rose-600/20"
+              >
+                {actionBusy ? 'Processing...' : 'Confirm Denial'}
               </button>
             </div>
           </div>
@@ -935,9 +1638,28 @@ export default function Inventory() {
   const { isAdmin } = useAuth();
   const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<SubTab>('stock');
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
-  const tabs: { id: SubTab; label: string }[] = [
+  const refreshPendingCount = useCallback(() => {
+    apiFetch('/api/inventory/adjustment-requests')
+      .then(r => (r.ok ? r.json() : []))
+      .then(rows => {
+        if (Array.isArray(rows)) {
+          setPendingRequestsCount(rows.filter((r: any) => r.status === 'Pending').length);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshPendingCount();
+    const interval = setInterval(refreshPendingCount, 15000);
+    return () => clearInterval(interval);
+  }, [refreshPendingCount]);
+
+  const tabs: { id: SubTab; label: string; badge?: number }[] = [
     { id: 'stock', label: 'Stock on Hand' },
+    { id: 'requests', label: 'Stock Requests', badge: pendingRequestsCount },
     { id: 'movements', label: 'Stock Movements' },
     { id: 'damaged', label: 'Damaged / BO' },
     { id: 'lowstock', label: 'Low Stock' },
@@ -948,7 +1670,7 @@ export default function Inventory() {
       {/* Page Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Inventory</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage stock levels, movements, and damaged goods for Llano Selecta.</p>
+        <p className="text-sm text-gray-500 mt-1">Manage stock levels, permissions, movements, and damaged goods for Llano Selecta.</p>
       </div>
 
       {/* Sub-tab Bar */}
@@ -957,13 +1679,22 @@ export default function Inventory() {
           <button
             key={tab.id}
             onClick={() => setActiveSubTab(tab.id)}
-            className={`flex-1 min-w-max px-4 py-2 text-sm font-semibold rounded-lg transition whitespace-nowrap ${
+            className={`flex-1 min-w-max px-4 py-2 text-sm font-semibold rounded-lg transition whitespace-nowrap flex items-center justify-center gap-2 ${
               activeSubTab === tab.id
                 ? 'bg-rose-600 text-white shadow-sm'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            {tab.label}
+            <span>{tab.label}</span>
+            {Boolean(tab.badge && tab.badge > 0) && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                activeSubTab === tab.id
+                  ? 'bg-white text-rose-700 shadow-sm'
+                  : 'bg-rose-100 text-rose-700 border border-rose-200'
+              }`}>
+                {tab.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -971,7 +1702,21 @@ export default function Inventory() {
       {/* Tab Content */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
         {activeSubTab === 'stock' && (
-          <StockOnHand isAdmin={isAdmin} showToast={showToast} />
+          <StockOnHand
+            isAdmin={isAdmin}
+            showToast={showToast}
+            onRequestCreated={() => {
+              refreshPendingCount();
+              setActiveSubTab('requests');
+            }}
+          />
+        )}
+        {activeSubTab === 'requests' && (
+          <StockRequests
+            isAdmin={isAdmin}
+            showToast={showToast}
+            onPendingCountChange={setPendingRequestsCount}
+          />
         )}
         {activeSubTab === 'movements' && (
           <StockMovements showToast={showToast} />
