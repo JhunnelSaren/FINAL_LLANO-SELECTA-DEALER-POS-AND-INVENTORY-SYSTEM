@@ -17,10 +17,12 @@
     "prisma:push": "npm run prisma:push --prefix server",
     "prisma:seed": "npm run prisma:seed --prefix server",
     "prisma:bootstrap": "npm run prisma:bootstrap --prefix server",
-    "setup": "npm run prisma:generate && npm run prisma:safe-sync && npm run prisma:bootstrap",
+    "setup": "npm run prisma:generate:sqlite && npm run db:push:sqlite && npm run prisma:bootstrap",
+    "setup:mysql": "npm run prisma:generate && npm run prisma:safe-sync && npm run prisma:bootstrap",
     "prisma:safe-sync": "npm run prisma:safe-sync --prefix server",
     "db:sync:sqlite": "npm run db:sync:sqlite --prefix server",
-    "db:push:sqlite": "npm run db:push:sqlite --prefix server"
+    "db:push:sqlite": "npm run db:push:sqlite --prefix server",
+    "db:init:turso": "npm run db:init:turso --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

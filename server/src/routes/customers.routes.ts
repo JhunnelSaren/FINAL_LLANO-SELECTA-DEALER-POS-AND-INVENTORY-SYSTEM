@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
-import { upload } from '../upload.js';
+import { storeUploadedFile, upload } from '../upload.js';
 import { deactivateDormantCustomers } from '../customers.service.js';
 
 const router = Router();
@@ -76,6 +76,7 @@ router.post('/', authenticateToken, requireRole('Admin'), upload.single('storePh
     const addedAt = dateAdded ? new Date(dateAdded) : new Date();
     if (!Number.isFinite(addedAt.getTime())) return res.status(400).json({ error: 'Enter a valid store registration date.' });
 
+    const storePhotoPath = req.file ? await storeUploadedFile(req.file) : null;
     const customer = await prisma.customer.create({
       data: {
         id: customerId,
@@ -91,7 +92,7 @@ router.post('/', authenticateToken, requireRole('Admin'), upload.single('storePh
         freezerSerial: freezerSerial || null,
         dateAdded: addedAt,
         lastOrderAt: addedAt,
-        storePhotoPath: req.file ? `/uploads/${req.file.filename}` : null,
+        storePhotoPath,
       },
     });
 
@@ -120,6 +121,7 @@ router.put('/:id', authenticateToken, requireRole('Admin'), upload.single('store
   const { id } = req.params;
   const { storeName, ownerName, contact, area, subArea, purok, route, address, notes, status, freezerSerial, dateAdded } = req.body;
   try {
+    const storePhotoPath = req.file ? await storeUploadedFile(req.file) : undefined;
     const updated = await prisma.customer.update({
       where: { id },
       data: {
@@ -136,7 +138,7 @@ router.put('/:id', authenticateToken, requireRole('Admin'), upload.single('store
         lastOrderAt: status === 'Active' ? new Date() : undefined,
         freezerSerial,
         dateAdded: dateAdded ? new Date(dateAdded) : undefined,
-        storePhotoPath: req.file ? `/uploads/${req.file.filename}` : undefined,
+        storePhotoPath,
       },
     });
 

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
-import { upload } from '../upload.js';
+import { storeUploadedFile, upload } from '../upload.js';
 
 const router = Router();
 
@@ -329,7 +329,7 @@ router.post('/:id/verify', authenticateToken, requireRole('Admin'), upload.singl
     // 30 days after scan is the next due date
     const nextDueDate = new Date(scanDate.getTime() + 30 * 24 * 60 * 60 * 1000);
 
-    const photoPath = req.file ? `/uploads/${req.file.filename}` : '/uploads/sample_freezer_barcode.png';
+    const photoPath = req.file ? await storeUploadedFile(req.file) : '/uploads/sample_freezer_barcode.png';
 
     const verification = await prisma.freezerVerification.create({
       data: {

@@ -3,7 +3,11 @@ import jwt from 'jsonwebtoken';
 import prisma from './db.js';
 import { formatAuditSentence } from './audit-formatter.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'llano-selecta-dealer-secure-key-bukidnon-2026';
+const configuredJwtSecret = process.env.JWT_SECRET;
+if (process.env.VERCEL && !configuredJwtSecret) {
+  throw new Error('JWT_SECRET must be configured before serving the hosted POS.');
+}
+const JWT_SECRET = configuredJwtSecret || 'llano-selecta-dealer-secure-key-bukidnon-2026';
 
 export interface AuthUser {
   id: string;

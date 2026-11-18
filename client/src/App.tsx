@@ -23,7 +23,7 @@ function AppContent() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-600 border-t-transparent mx-auto mb-4" />
-          <p className="text-gray-600 font-medium">Loading Llano POS...</p>
+          <p className="text-gray-600 font-medium">Loading Llano Selecta Dealer POS...</p>
         </div>
       </div>
     )

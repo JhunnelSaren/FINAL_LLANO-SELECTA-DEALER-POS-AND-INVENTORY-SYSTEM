@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
-import { imageUpload } from '../upload.js';
+import { imageUpload, storeUploadedFile } from '../upload.js';
 import { formatAuditSentence } from '../audit-formatter.js';
 
 const router = Router();
@@ -208,8 +208,8 @@ router.put('/login-page', authenticateToken, requireRole('Admin'), async (req: A
 
 router.post('/login-page/upload', authenticateToken, requireRole('Admin'), imageUpload.single('file'), async (req: AuthenticatedRequest, res: Response) => {
   if (!req.file) return res.status(400).json({ error: 'Choose a JPEG, PNG, or WebP image to upload.' });
-  const imageUrl = `/uploads/${req.file.filename}`;
-  await recordAudit('Upload Login Page Image', 'Settings', req.user?.name || 'Admin', { filename: req.file.filename });
+  const imageUrl = await storeUploadedFile(req.file);
+  await recordAudit('Upload Login Page Image', 'Settings', req.user?.name || 'Admin', { filename: req.file.originalname });
   res.status(201).json({ imageUrl });
 });
 

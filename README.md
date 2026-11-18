@@ -4,18 +4,17 @@ Point of sale, booking, freezer van receiving, inventory, delivery, reconciliati
 
 ## Local setup
 
-1. Start Laragon's MySQL server and make sure the `llano_selecta_db` database exists.
-2. Copy `server/.env.example` to `server/.env`. The sample URL matches Laragon's local `root` account with no password; add the password to `DATABASE_URL` if you have set one. Set a private `JWT_SECRET`. The real `server/.env` file is ignored by Git.
-3. From the project folder, run:
+1. Copy `server/.env.example` to `server/.env` and set a private `JWT_SECRET`. The real `server/.env` file is ignored by Git.
+2. From the project folder, run:
 
    ```powershell
    npm run install:all
    npm run setup
    ```
 
-   `npm run setup` creates the schema when the database is empty. For an existing Llano database, it applies only missing workflow columns and the freezer transaction table, preserving existing tables and records. It leaves existing account passwords and statuses unchanged. The optional `npm run prisma:seed` command adds sample operating records; use it only in a development database.
+   `npm run setup` prepares the local SQLite schema and ensures the initial accounts and settings exist. The local database file is `server/prisma/pos_local.db`. Setup preserves existing account passwords and statuses. The optional `npm run prisma:seed` command adds sample operating records; use it only in a development database.
 
-`server/prisma/schema.prisma` is the source of truth for the Laragon MySQL schema. `DATABASE.txt` and `llano_selecta_db_complete.sql` are legacy PostgreSQL references and must not be run against the MySQL database.
+`server/prisma/schema.sqlite.prisma` is the source of truth for local SQLite and the Turso/libSQL production database. The MySQL schema remains available with `npm run setup:mysql`.
 
 After setup, start the system from the project folder with:
 
@@ -49,3 +48,11 @@ Change these passwords after the first sign-in. Admins can add, edit, disable, r
 npm run build
 npm test
 ```
+
+## Vercel and Turso deployment
+
+The Vercel project is configured to build the Vite client and Express API from this repository. Production must use `DB_PROVIDER=turso` and the `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` values from the Turso database. Set a unique `JWT_SECRET` for production. Persistent image and receipt uploads use Vercel Blob through `BLOB_READ_WRITE_TOKEN`; Vercel Functions cannot retain files written to their local filesystem.
+
+For a new empty Turso database, set the Turso values in the environment and run `npm run db:init:turso` once. This command stops if it finds existing tables. Do not run it against a database that already contains production data.
+
+Keep the existing local SQLite database as the source of POS records during setup. Before production is opened to staff, transfer the required records and any referenced uploads into Turso and Vercel Blob, then verify the first admin sign-in and key POS workflows.

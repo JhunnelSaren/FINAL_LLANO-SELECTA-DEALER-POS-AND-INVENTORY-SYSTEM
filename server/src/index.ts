@@ -52,13 +52,19 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Static uploads directory - support both root and server relative paths
+// Static uploads are local-only. Vercel's function filesystem is read-only;
+// cloud uploads are stored in Vercel Blob and return their permanent URLs.
 const rootUploadDir = path.join(projectRoot, 'uploads');
 const serverUploadDir = path.join(projectRoot, 'server', 'uploads');
-if (!fs.existsSync(rootUploadDir)) fs.mkdirSync(rootUploadDir, { recursive: true });
-if (!fs.existsSync(serverUploadDir)) fs.mkdirSync(serverUploadDir, { recursive: true });
-app.use('/uploads', express.static(serverUploadDir));
-app.use('/uploads', express.static(rootUploadDir));
+if (!process.env.VERCEL) {
+  if (!fs.existsSync(rootUploadDir)) fs.mkdirSync(rootUploadDir, { recursive: true });
+  if (!fs.existsSync(serverUploadDir)) fs.mkdirSync(serverUploadDir, { recursive: true });
+  app.use('/uploads', express.static(serverUploadDir));
+  app.use('/uploads', express.static(rootUploadDir));
+} else {
+  // Read-only bundled defaults are served here; new files are stored in Vercel Blob.
+  app.use('/uploads', express.static(serverUploadDir));
+}
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -105,7 +111,10 @@ if (fs.existsSync(clientDist)) {
 // Error handling middleware
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Server Unhandled Error:', err);
-  res.status(err.status || 500).json({
+  const isFileTooLarge = err.code === 'LIMIT_FILE_SIZE';
+  const isRejectedUpload = err.message?.startsWith('Only images') || err.message?.startsWith('Login images');
+  const status = isFileTooLarge ? 413 : isRejectedUpload ? 400 : err.status || 500;
+  res.status(status).json({
     error: err.message || 'Internal Server Error',
   });
 });
