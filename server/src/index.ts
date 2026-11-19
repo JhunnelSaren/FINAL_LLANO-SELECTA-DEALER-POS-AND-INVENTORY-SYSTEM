@@ -22,6 +22,7 @@ import quotaRoutes from './routes/quota.routes.js';
 import reportsRoutes from './routes/reports.routes.js';
 import settingsRoutes from './routes/settings.routes.js';
 import notificationsRoutes from './routes/notifications.routes.js';
+import syncRoutes from './routes/sync.routes.js';
 import { deactivateDormantCustomers } from './customers.service.js';
 
 const app = express();
@@ -98,6 +99,7 @@ app.use('/api/quota', quotaRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/sync', syncRoutes);
 
 // In production, serve static files from client/dist
 const clientDist = path.join(projectRoot, 'client', 'dist');

@@ -2,6 +2,7 @@ import { PrismaClient as MySQLPrismaClient } from '../generated-prisma/index.js'
 import { PrismaClient as SQLitePrismaClient } from '../generated-prisma-sqlite/index.js';
 import { PrismaLibSQL } from '@prisma/adapter-libsql';
 import { createClient } from '@libsql/client';
+import { createTursoSyncPrismaAdapter } from './turso-sync.js';
 import path from 'path';
 
 const configuredDatabaseUrl = process.env.DATABASE_URL || '';
@@ -25,6 +26,10 @@ if (provider === 'turso') {
   const adapter = new PrismaLibSQL(libsql);
   client = new SQLitePrismaClient({ adapter });
   console.log('[Database Engine] Active provider: TURSO (libSQL)');
+} else if (provider === 'turso-sync') {
+  const adapter = createTursoSyncPrismaAdapter();
+  client = new SQLitePrismaClient({ adapter });
+  console.log('[Database Engine] Active provider: TURSO SYNC (local-first)');
 } else if (provider === 'sqlite') {
   // Always resolve to absolute path so it works reliably from any current working directory
   const defaultDbFile = path.resolve(__dirname, '../prisma/pos_local.db').replace(/\\/g, '/');
