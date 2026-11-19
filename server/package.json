@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "node scripts/ensure-mysql-client.cjs && tsc",
     "start": "node dist/index.js",
     "test": "vitest run",
     "prisma:generate": "prisma generate",
@@ -15,12 +15,16 @@
     "prisma:bootstrap": "tsx prisma/bootstrap.ts",
     "prisma:generate:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
     "db:push:sqlite": "prisma db push --schema prisma/schema.sqlite.prisma",
+    "db:init:turso": "node scripts/init-turso.cjs",
     "db:sync:sqlite": "tsx prisma/migrate-data-to-sqlite.ts"
   },
   "dependencies": {
-    "@libsql/client": "^0.18.0",
+    "@libsql/client": "^0.8.0",
+    "@prisma/adapter-libsql": "5.22.0",
     "@prisma/client": "^5.22.0",
+    "@tursodatabase/sync": "0.8.3",
     "@types/nodemailer": "^8.0.2",
+    "@vercel/blob": "^2.0.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",

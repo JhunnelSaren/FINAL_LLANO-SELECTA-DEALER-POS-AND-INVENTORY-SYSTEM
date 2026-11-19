@@ -179,7 +179,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
             <span className="flex items-center gap-1.5 text-rose-400 font-bold tracking-wide uppercase text-[11px] shrink-0">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-              Llano Selecta Dealer
+              Llano Selecta Dealer POS
             </span>
             <span className="text-slate-600 shrink-0">•</span>
             <span className="flex items-center gap-1 text-slate-300 text-[11px] min-w-0 truncate" title={headerSubtitle}>

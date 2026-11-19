@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { authenticateToken, recordAudit, AuthenticatedRequest } from '../auth.js';
-import { upload } from '../upload.js';
+import { storeUploadedFile, upload } from '../upload.js';
 
 const router = Router();
 
@@ -35,7 +35,7 @@ router.post('/', authenticateToken, upload.single('receiptPhoto'), async (req: A
     const receivedDate = arrivalDate ? new Date(arrivalDate) : new Date();
     if (!Number.isFinite(receivedDate.getTime())) return res.status(400).json({ error: 'Enter a valid date and time received.' });
     const receivingId = `RCV-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const photoPath = `/uploads/${req.file.filename}`;
+    const photoPath = await storeUploadedFile(req.file);
 
     const record = await prisma.$transaction(async tx => {
       const receiveItems: any[] = [];

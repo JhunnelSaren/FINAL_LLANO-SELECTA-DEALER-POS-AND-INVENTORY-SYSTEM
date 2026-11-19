@@ -341,7 +341,9 @@ router.post('/import', authenticateToken, upload.single('file'), async (req: Aut
       return res.status(400).json({ error: 'Please upload an Excel or CSV file.' });
     }
 
-    const workbook = xlsx.readFile(req.file.path);
+    const workbook = req.file.buffer
+      ? xlsx.read(req.file.buffer)
+      : xlsx.readFile(req.file.path);
     const firstSheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[firstSheetName];
     const rawRows = xlsx.utils.sheet_to_json<any>(worksheet);
