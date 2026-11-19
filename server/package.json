@@ -12,16 +12,22 @@
     "prisma:safe-sync": "tsx prisma/safe-sync.ts",
     "prisma:push": "npm run prisma:safe-sync",
     "prisma:seed": "tsx prisma/seed.ts",
-    "prisma:bootstrap": "tsx prisma/bootstrap.ts"
+    "prisma:bootstrap": "tsx prisma/bootstrap.ts",
+    "prisma:generate:sqlite": "prisma generate --schema prisma/schema.sqlite.prisma",
+    "db:push:sqlite": "prisma db push --schema prisma/schema.sqlite.prisma",
+    "db:sync:sqlite": "tsx prisma/migrate-data-to-sqlite.ts"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "@prisma/client": "^5.22.0",
+    "@types/nodemailer": "^8.0.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.6.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -110,13 +110,21 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   });
 });
 
-if (process.env.NODE_ENV !== 'test') {
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection (recovered):', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception (recovered):', err);
+});
+
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`================================================================`);
     console.log(`🚀 Llano Selecta Dealer POS and Inventory Backend Server Running`);
     console.log(`   Port: ${PORT}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`   Database: MySQL (Prisma ORM)`);
+    console.log(`   Database Engine: ${process.env.DB_PROVIDER ? process.env.DB_PROVIDER.toUpperCase() : 'SQLITE'} (Prisma ORM)`);
     console.log(`   Timezone: Asia/Manila`);
     console.log(`================================================================`);
     void deactivateDormantCustomers().catch((err) => console.error('Store inactivity check failed:', err));

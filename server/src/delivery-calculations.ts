@@ -1,12 +1,12 @@
 export interface DeliveryQuantities {
   acceptedQty: unknown;
-  boRefusedQty: unknown;
+  boRefusedQty?: unknown;
 }
 
 export interface DeliveryAmountLine {
   acceptedQty: number;
-  boRefusedQty: number;
   unitPrice: number;
+  boRefusedQty?: number;
 }
 
 function roundCurrency(amount: number): number {
@@ -20,7 +20,7 @@ export function validateDeliveryQuantities(
 ): string | null {
   const values = [
     ['Accepted', quantities.acceptedQty],
-    ['BO damaged', quantities.boRefusedQty],
+    ['BO damaged', quantities.boRefusedQty ?? 0],
   ] as const;
 
   for (const [label, value] of values) {
@@ -30,7 +30,7 @@ export function validateDeliveryQuantities(
   }
 
   const acceptedQty = quantities.acceptedQty as number;
-  const boRefusedQty = quantities.boRefusedQty as number;
+  const boRefusedQty = Number(quantities.boRefusedQty ?? 0);
   if (acceptedQty > loadedQty) {
     return `${productName}: accepted quantity ${acceptedQty} exceeds loaded quantity ${loadedQty}.`;
   }
@@ -44,18 +44,21 @@ export function validateDeliveryQuantities(
 export function calculateDeliveryAmounts(
   lines: DeliveryAmountLine[],
   previousBalance: number,
-  paymentMethod: string,
-  amountCollected: number,
+  paymentMethod = 'Cash',
+  amountCollected = 0,
   shortDeductionAmount = 0,
+  directBoAmount?: number,
 ) {
   const productBillAmount = roundCurrency(lines.reduce(
     (sum, line) => sum + line.acceptedQty * line.unitPrice,
     0,
   ));
-  const boDeductionAmount = roundCurrency(lines.reduce(
-    (sum, line) => sum + line.boRefusedQty * line.unitPrice,
-    0,
-  ));
+  const boDeductionAmount = directBoAmount !== undefined
+    ? roundCurrency(directBoAmount)
+    : roundCurrency(lines.reduce(
+        (sum, line) => sum + (line.boRefusedQty || 0) * line.unitPrice,
+        0,
+      ));
   const shortDeduction = roundCurrency(shortDeductionAmount);
   const finalProductBill = Math.max(0, roundCurrency(productBillAmount - boDeductionAmount - shortDeduction));
   const totalAmountDue = roundCurrency(finalProductBill + previousBalance);

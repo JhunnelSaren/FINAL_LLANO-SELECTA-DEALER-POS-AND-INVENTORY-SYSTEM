@@ -101,6 +101,8 @@ async function main() {
 
   const additions = [
     ['user', 'accessKey', 'VARCHAR(191) NULL'],
+    ['user', 'resetCode', 'VARCHAR(64) NULL'],
+    ['user', 'resetCodeExpiry', 'DATETIME(3) NULL'],
     ['product', 'flavor', 'VARCHAR(191) NULL'],
     ['customer', 'lastOrderAt', 'DATETIME(3) NULL'],
     ['customer', 'storePhotoPath', 'TEXT NULL'],
@@ -113,6 +115,7 @@ async function main() {
     ['InventoryLedger', 'category', 'VARCHAR(191) NULL'],
     ['BoDiscrepancy', 'customerId', 'VARCHAR(191) NULL'],
     ['SystemSetting', 'loginPageConfig', 'TEXT NULL'],
+    ['SystemSetting', 'headerSubtitle', 'TEXT NULL'],
   ] as const;
 
   for (const [table, column, definition] of additions) {
@@ -172,6 +175,30 @@ async function main() {
       PRIMARY KEY (${quoteIdentifier('id')}),
       UNIQUE INDEX ${quoteIdentifier('usernotificationstate_userId_notificationId_key')} (${quoteIdentifier('userId')}, ${quoteIdentifier('notificationId')}),
       INDEX ${quoteIdentifier('usernotificationstate_userId_isDeleted_idx')} (${quoteIdentifier('userId')}, ${quoteIdentifier('isDeleted')})
+    ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS ${quoteIdentifier('stockadjustmentrequest')} (
+      ${quoteIdentifier('id')} VARCHAR(64) NOT NULL,
+      ${quoteIdentifier('productId')} VARCHAR(191) NOT NULL,
+      ${quoteIdentifier('productName')} VARCHAR(191) NOT NULL,
+      ${quoteIdentifier('currentStock')} INT NOT NULL,
+      ${quoteIdentifier('requestedChange')} INT NOT NULL,
+      ${quoteIdentifier('proposedStock')} INT NOT NULL,
+      ${quoteIdentifier('reason')} VARCHAR(255) NOT NULL,
+      ${quoteIdentifier('notes')} TEXT NULL,
+      ${quoteIdentifier('staffId')} VARCHAR(64) NOT NULL,
+      ${quoteIdentifier('staffName')} VARCHAR(191) NOT NULL,
+      ${quoteIdentifier('status')} VARCHAR(50) NOT NULL DEFAULT 'Pending',
+      ${quoteIdentifier('adminId')} VARCHAR(64) NULL,
+      ${quoteIdentifier('adminName')} VARCHAR(191) NULL,
+      ${quoteIdentifier('adminNotes')} TEXT NULL,
+      ${quoteIdentifier('reviewedAt')} DATETIME(3) NULL,
+      ${quoteIdentifier('createdAt')} DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+      ${quoteIdentifier('updatedAt')} DATETIME(3) NOT NULL,
+      PRIMARY KEY (${quoteIdentifier('id')}),
+      INDEX ${quoteIdentifier('stockadjustmentrequest_status_createdAt_idx')} (${quoteIdentifier('status')}, ${quoteIdentifier('createdAt')})
     ) ENGINE=InnoDB DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
   `);
 

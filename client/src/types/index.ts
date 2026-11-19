@@ -344,3 +344,23 @@ export interface SystemSetting {
   fridayRoute: string;
   allowNegativeStock: boolean;
 }
+
+export interface StockAdjustmentRequest {
+  id: string;
+  productId: string;
+  productName: string;
+  currentStock: number;
+  requestedChange: number;
+  proposedStock: number;
+  reason: string;
+  notes?: string | null;
+  staffId: string;
+  staffName: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  adminId?: string | null;
+  adminName?: string | null;
+  adminNotes?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}

@@ -204,11 +204,16 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
       const year = bookedAt.getFullYear();
       const prefix = `BK-${year}-`;
       const lockName = `booking_lock_${prefix}`;
-      const [lock] = await tx.$queryRaw<Array<{ locked: number | null }>>`
-        SELECT GET_LOCK(${lockName}, 5) AS locked
-      `;
-      if (Number(lock?.locked) !== 1) {
-        throw Object.assign(new Error('Booking numbers are busy. Please try again.'), { code: 'BOOKING_LOCK_TIMEOUT' });
+      let hasLock = false;
+      try {
+        const [lock] = await tx.$queryRaw<Array<{ locked: number | null }>>`
+          SELECT GET_LOCK(${lockName}, 5) AS locked
+        `;
+        if (Number(lock?.locked) === 1) {
+          hasLock = true;
+        }
+      } catch {
+        // In SQLite / libSQL, transactions are already file-level serialized
       }
 
       try {
@@ -237,7 +242,9 @@ router.post('/', authenticateToken, async (req: AuthenticatedRequest, res: Respo
         await tx.customer.update({ where: { id: customer.id }, data: { lastOrderAt: bookedAt } });
         return created;
       } finally {
-        await tx.$queryRaw`SELECT RELEASE_LOCK(${lockName}) AS released`;
+        if (hasLock) {
+          await tx.$queryRaw`SELECT RELEASE_LOCK(${lockName}) AS released`.catch(() => {});
+        }
       }
     });
 

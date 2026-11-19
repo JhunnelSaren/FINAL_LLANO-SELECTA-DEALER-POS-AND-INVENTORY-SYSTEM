@@ -34,6 +34,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const [notificationCount, setNotificationCount] = useState(0);
   const [notificationActionBusy, setNotificationActionBusy] = useState(false);
   const [notificationError, setNotificationError] = useState('');
+  const [headerSubtitle, setHeaderSubtitle] = useState('Sayre Hwy, Valencia City • San Fernando • Cabanglasan');
   const menuRef = useRef<HTMLDivElement>(null);
 
   const applyNotificationResponse = (response: { notifications?: any[]; unreadCount?: number }) => {
@@ -121,6 +122,31 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     return () => { active = false; window.clearInterval(interval); };
   }, [user]);
 
+  // Load and subscribe to updated header subtitle/location
+  useEffect(() => {
+    let active = true;
+    const loadHeader = async () => {
+      try {
+        const res = await apiRequest<{ headerSubtitle?: string }>('/settings/header');
+        if (active && res && res.headerSubtitle) {
+          setHeaderSubtitle(res.headerSubtitle);
+        }
+      } catch {
+        // Fallback default retained
+      }
+    };
+    loadHeader();
+
+    const handleHeaderUpdate = () => {
+      loadHeader();
+    };
+    window.addEventListener('dealership-settings-updated', handleHeaderUpdate);
+    return () => {
+      active = false;
+      window.removeEventListener('dealership-settings-updated', handleHeaderUpdate);
+    };
+  }, []);
+
   // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -147,30 +173,30 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-sm no-print">
       {/* ─── Ultra-Clean Top Status Bar ────────────────────────────────────────── */}
-      <div className="bg-slate-900 text-slate-300 px-4 sm:px-6 lg:px-8 py-1.5 text-xs">
-        <div className="max-w-screen-2xl mx-auto flex justify-between items-center">
-          {/* Left: Location & Route Coverage */}
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-rose-400 font-semibold tracking-wide uppercase text-[11px]">
+      <div className="bg-slate-900 text-slate-300 px-3 sm:px-6 lg:px-8 py-1.5 text-xs">
+        <div className="max-w-screen-2xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-1.5 md:gap-4">
+          {/* Left: Location & Route Coverage (Editable by Admin) */}
+          <div className="flex items-center gap-2 min-w-0 w-full md:w-auto">
+            <span className="flex items-center gap-1.5 text-rose-400 font-bold tracking-wide uppercase text-[11px] shrink-0">
               <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
               Llano Selecta Dealer
             </span>
-            <span className="hidden sm:inline text-slate-600">•</span>
-            <span className="hidden sm:flex items-center gap-1 text-slate-400 text-[11px]">
-              <MapPin className="w-3 h-3 text-slate-500" />
-              Sayre Hwy, Valencia City • San Fernando • Cabanglasan
+            <span className="text-slate-600 shrink-0">•</span>
+            <span className="flex items-center gap-1 text-slate-300 text-[11px] min-w-0 truncate" title={headerSubtitle}>
+              <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
+              <span className="truncate font-medium">{headerSubtitle}</span>
             </span>
           </div>
 
           {/* Right: Operational Status, Timezone & Live Manila Clock */}
-          <div className="flex items-center gap-4 text-[11px]">
-            <span className="hidden md:flex items-center gap-1.5 text-emerald-400 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              System Operational
+          <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-3 text-[11px] pt-1 md:pt-0 border-t border-slate-800/80 md:border-t-0">
+            <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Operational</span>
             </span>
-            <span className="text-slate-600 hidden md:inline">•</span>
+            <span className="text-slate-600 hidden sm:inline">•</span>
             <span className="flex items-center gap-1.5 text-slate-400 font-mono">
-              <Clock className="w-3 h-3 text-slate-500" />
+              <Clock className="w-3 h-3 text-slate-500 shrink-0" />
               {currentTime ? `${currentTime} (PHT)` : 'Asia/Manila'}
             </span>
             <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
@@ -346,8 +372,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           </div>
         </div>
 
-        {/* ─── Mobile Secondary Nav Strip ────────────────────────────────────── */}
-        <nav aria-label="Main modules" className="grid grid-cols-2 sm:grid-cols-3 xl:hidden py-1.5 gap-1 border-t border-slate-100">
+        {/* ─── Mobile Secondary Nav Strip (Touch & Android Optimized) ──────────── */}
+        <nav aria-label="Main modules" className="flex xl:hidden overflow-x-auto no-scrollbar py-2 gap-1.5 border-t border-slate-100 touch-pan-x -mx-2 px-2">
           {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -357,13 +383,13 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                 type="button"
                 onClick={() => setActiveTab(item.id)}
                 aria-current={isActive ? 'page' : undefined}
-                className={`flex min-w-0 w-full items-center justify-center gap-1.5 px-2 py-2 rounded-lg text-[11px] font-semibold transition-all ${
+                className={`flex shrink-0 min-w-[max-content] items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold active:scale-95 transition-all ${
                   isActive
-                    ? 'bg-rose-600 text-white shadow-sm'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-rose-600 text-white shadow-sm shadow-rose-200'
+                    : 'text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200/60'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
                 <span className="whitespace-nowrap">{item.label}</span>
               </button>
             );

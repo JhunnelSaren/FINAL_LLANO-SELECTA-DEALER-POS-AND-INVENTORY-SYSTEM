@@ -33,22 +33,22 @@ router.get('/sales', authenticateToken, async (req, res: Response) => {
       orderBy: { invoiceDate: 'desc' },
     });
 
-    const totalInvoiced = invoices.reduce((s, inv) => s + inv.netAmountDue, 0);
-    const totalCollected = invoices.reduce((s, inv) => s + inv.totalPaid, 0);
-    const totalOutstanding = invoices.reduce((s, inv) => s + inv.balanceRemaining, 0);
+    const totalInvoiced = invoices.reduce((s, inv) => s + Number(inv.netAmountDue || 0), 0);
+    const totalCollected = invoices.reduce((s, inv) => s + Number(inv.totalPaid || 0), 0);
+    const totalOutstanding = invoices.reduce((s, inv) => s + Number(inv.balanceRemaining || 0), 0);
     const products = new Map<string, { name: string; sku: string; qty: number; revenue: number }>();
     const customers = new Map<string, { name: string; orders: number; revenue: number }>();
     const routes = new Map<string, { route: string; orders: number; revenue: number }>();
     for (const invoice of invoices) {
       const customer = customers.get(invoice.storeName) || { name: invoice.storeName, orders: 0, revenue: 0 };
       customer.orders += 1;
-      customer.revenue += invoice.netAmountDue;
+      customer.revenue += Number(invoice.netAmountDue || 0);
       customers.set(invoice.storeName, customer);
       const routeName = invoice.deliveryStop?.deliveryRun?.route;
       if (routeName) {
         const routeRow = routes.get(routeName) || { route: routeName, orders: 0, revenue: 0 };
         routeRow.orders += 1;
-        routeRow.revenue += invoice.netAmountDue;
+        routeRow.revenue += Number(invoice.netAmountDue || 0);
         routes.set(routeName, routeRow);
       }
       for (const item of invoice.deliveryStop?.items ?? []) {
@@ -218,7 +218,7 @@ router.get('/receivables', authenticateToken, async (req, res: Response) => {
       invoiceDatesByCustomer.set(invoice.customerId, dates);
     }
 
-    const totalReceivables = customers.reduce((s, c) => s + c.currentBalance, 0);
+    const totalReceivables = customers.reduce((s, c) => s + Number(c.currentBalance || 0), 0);
 
     if (exportExcel === 'true') {
       const rows = customers.map((c) => ({
@@ -275,12 +275,12 @@ router.get('/cash-discrepancies', authenticateToken, async (req, res: Response) 
     });
 
     const totalShortages = reconciliations
-      .filter((r) => r.cashVariance < 0)
-      .reduce((s, r) => s + Math.abs(r.cashVariance), 0);
+      .filter((r) => Number(r.cashVariance) < 0)
+      .reduce((s, r) => s + Math.abs(Number(r.cashVariance)), 0);
 
     const totalOverages = reconciliations
-      .filter((r) => r.cashVariance > 0)
-      .reduce((s, r) => s + r.cashVariance, 0);
+      .filter((r) => Number(r.cashVariance) > 0)
+      .reduce((s, r) => s + Number(r.cashVariance), 0);
 
     const records = reconciliations.map((r) => ({
       runNumber: r.deliveryRun.runNumber,
@@ -295,7 +295,7 @@ router.get('/cash-discrepancies', authenticateToken, async (req, res: Response) 
       totalShortages,
       totalOverages,
       reconciliations,
-      totalVariance: reconciliations.reduce((sum, row) => sum + row.cashVariance, 0),
+      totalVariance: reconciliations.reduce((sum, row) => sum + Number(row.cashVariance || 0), 0),
       records,
     });
   } catch (err: any) {
@@ -435,7 +435,7 @@ router.get('/staff-performance', authenticateToken, async (req, res: Response) =
       for (const st of r.stops) {
         if (st.invoice) {
           for (const p of st.invoice.payments) {
-            staffMap.get(r.collector)!.totalCollected += p.amount;
+            staffMap.get(r.collector)!.totalCollected += Number(p.amount || 0);
           }
         }
       }

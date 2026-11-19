@@ -41,6 +41,9 @@ type LoginPageConfig = {
   socialGoogleText: string;
   socialAppleText: string;
   footerText: string;
+  copyrightText?: string;
+  footerAddress?: string;
+  footerSubtext?: string;
   registerText: string;
   registerUrl: string;
   slides: LoginPageSlide[];
@@ -66,6 +69,9 @@ const defaultLoginPage: LoginPageConfig = {
   socialGoogleText: 'Continue with Google',
   socialAppleText: 'Continue with Apple',
   footerText: "Don't have an account?",
+  copyrightText: '© 2026 Llano Selecta',
+  footerAddress: 'Sayre Hwy, Valencia City, Bukidnon',
+  footerSubtext: '',
   registerText: 'Register',
   registerUrl: '#register',
   slides: [
@@ -95,6 +101,7 @@ export default function Settings() {
   // Dealership Settings State
   const [settings, setSettings] = useState<{ [key: string]: any }>({
     dealerName: 'Llano Selecta Dealer',
+    headerSubtitle: 'Sayre Hwy, Valencia City • San Fernando • Cabanglasan',
     address: 'Sayre Highway, Poblacion, Valencia City, Bukidnon',
     contactNumber: '0917-555-4321 / (088) 828-5555',
     receiptHeader: 'LLANO ICE CREAM DEALERSHIP - VALENCIA CITY',
@@ -239,6 +246,7 @@ export default function Settings() {
         method: 'PUT',
         body: JSON.stringify(settings),
       });
+      window.dispatchEvent(new Event('dealership-settings-updated'));
       showToast('Settings saved successfully!', 'success');
     } catch (err: any) {
       showToast(err.message || 'Failed to save settings', 'error');
@@ -407,11 +415,11 @@ export default function Settings() {
 
       {/* Main Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar Nav */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3 space-y-1.5 h-fit">
+        {/* Sidebar Nav (Responsive & Touch-Friendly on Android) */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-2 sm:p-3 flex lg:flex-col overflow-x-auto no-scrollbar gap-1.5 h-fit touch-pan-x">
           <button
             onClick={() => setActiveSection('profile')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+            className={`shrink-0 min-w-[max-content] lg:w-full flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition ${
               activeSection === 'profile'
                 ? 'bg-rose-50 text-rose-700 border border-rose-200'
                 : 'text-slate-600 hover:bg-slate-50'
@@ -424,7 +432,7 @@ export default function Settings() {
           {isAdmin && (
             <button
               onClick={() => setActiveSection('login')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+              className={`shrink-0 min-w-[max-content] lg:w-full flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 activeSection === 'login'
                   ? 'bg-rose-50 text-rose-700 border border-rose-200'
                   : 'text-slate-600 hover:bg-slate-50'
@@ -437,7 +445,7 @@ export default function Settings() {
 
           <button
             onClick={() => setActiveSection('products')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+            className={`shrink-0 min-w-[max-content] lg:w-full flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition ${
               activeSection === 'products'
                 ? 'bg-rose-50 text-rose-700 border border-rose-200'
                 : 'text-slate-600 hover:bg-slate-50'
@@ -449,7 +457,7 @@ export default function Settings() {
 
           <button
             onClick={() => setActiveSection('staff')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+            className={`shrink-0 min-w-[max-content] lg:w-full flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition ${
               activeSection === 'staff'
                 ? 'bg-rose-50 text-rose-700 border border-rose-200'
                 : 'text-slate-600 hover:bg-slate-50'
@@ -462,7 +470,7 @@ export default function Settings() {
           {isAdmin && (
             <button
               onClick={() => setActiveSection('audit')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition ${
+              className={`shrink-0 min-w-[max-content] lg:w-full flex items-center gap-2.5 px-3.5 py-2.5 sm:px-4 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition ${
                 activeSection === 'audit'
                   ? 'bg-rose-50 text-rose-700 border border-rose-200'
                   : 'text-slate-600 hover:bg-slate-50'
@@ -540,6 +548,23 @@ export default function Settings() {
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                   />
                 </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    Header Subtitle / Branches Location
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={settings.headerSubtitle || ''}
+                    onChange={(e) => setSettings({ ...settings, headerSubtitle: e.target.value })}
+                    placeholder="Sayre Hwy, Valencia City • San Fernando • Cabanglasan"
+                    className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Updates the prominent branch coverage text displayed on the top navigation header bar.
+                  </p>
+                </div>
               </div>
 
               <div className="border-t pt-4">
@@ -611,7 +636,7 @@ export default function Settings() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-slate-800">Brand Logo / Pill Icon</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Upload a transparent PNG, JPEG, or WebP logo (up to 8 MB), or choose a built-in icon.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Upload a transparent PNG, JPEG, or WebP logo (up to 8 MB) for the login card pill.</p>
                     <div className="mt-3 flex flex-wrap items-center gap-3">
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm">
                         <Upload className="h-3.5 w-3.5" />
@@ -637,24 +662,11 @@ export default function Settings() {
                           Remove custom logo
                         </button>
                       )}
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-slate-500">Built-in icon:</span>
-                        <select
-                          value={loginPage.logoIcon}
-                          onChange={(e) => setLoginPage({ ...loginPage, logoIcon: e.target.value })}
-                          className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs focus:ring-2 focus:ring-rose-500"
-                        >
-                          <option value="home">Home / Villa</option>
-                          <option value="store">Store / Retailer</option>
-                          <option value="snowflake">Snowflake (Selecta)</option>
-                          <option value="building">Building / Corporate</option>
-                        </select>
-                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Brand Name</label>
                   <input
                     maxLength={80}
@@ -663,18 +675,6 @@ export default function Settings() {
                     className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
                     placeholder="e.g. Serenique or Llano Selecta Dealer"
                   />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">Theme Palette / Style</label>
-                  <select
-                    value={loginPage.themeStyle}
-                    onChange={(event) => setLoginPage({ ...loginPage, themeStyle: event.target.value })}
-                    className="w-full border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 bg-white"
-                  >
-                    <option value="modern-glass">Onyx Modern Glass (Exact match to Photo)</option>
-                    <option value="selecta-red">Selecta Dealer Crimson</option>
-                    <option value="midnight-dark">Midnight Slate</option>
-                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">Welcome Heading (Large Serif)</label>
@@ -698,61 +698,9 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* FORM LABELS & BUTTONS */}
-              <div className="border-t pt-5">
-                <h3 className="text-sm font-bold text-slate-800 mb-3">Login Form Labels &amp; Text</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Email Input Label</label>
-                    <input
-                      value={loginPage.emailLabel}
-                      onChange={(e) => setLoginPage({ ...loginPage, emailLabel: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Email Placeholder</label>
-                    <input
-                      value={loginPage.emailPlaceholder}
-                      onChange={(e) => setLoginPage({ ...loginPage, emailPlaceholder: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Login Button Text</label>
-                    <input
-                      value={loginPage.loginButtonText}
-                      onChange={(e) => setLoginPage({ ...loginPage, loginButtonText: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Password Label</label>
-                    <input
-                      value={loginPage.passwordLabel}
-                      onChange={(e) => setLoginPage({ ...loginPage, passwordLabel: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Password Placeholder</label>
-                    <input
-                      value={loginPage.passwordPlaceholder}
-                      onChange={(e) => setLoginPage({ ...loginPage, passwordPlaceholder: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Forgot Password Link</label>
-                    <input
-                      value={loginPage.forgotPasswordText}
-                      onChange={(e) => setLoginPage({ ...loginPage, forgotPasswordText: e.target.value })}
-                      className="w-full border rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-4 flex flex-wrap items-center gap-6 text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              {/* QUICK DEMO ACCESS & FOOTER BRANDING */}
+              <div className="border-t pt-5 space-y-4">
+                <div className="flex flex-wrap items-center gap-6 text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -762,6 +710,48 @@ export default function Settings() {
                     />
                     <span className="font-semibold">Show quick demo access button</span>
                   </label>
+                </div>
+
+                <div className="pt-2">
+                  <h3 className="text-sm font-bold text-slate-800 mb-1">Login Homepage Footer Details</h3>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Customize the copyright and address shown at the bottom of the sign-in homepage.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Footer Copyright Text
+                      </label>
+                      <input
+                        value={loginPage.copyrightText ?? '© 2026 Llano Selecta'}
+                        onChange={(e) => setLoginPage({ ...loginPage, copyrightText: e.target.value })}
+                        className="w-full border rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
+                        placeholder="e.g. © 2026 Llano Selecta"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Footer Address / Location
+                      </label>
+                      <input
+                        value={loginPage.footerAddress ?? 'Sayre Hwy, Valencia City, Bukidnon'}
+                        onChange={(e) => setLoginPage({ ...loginPage, footerAddress: e.target.value })}
+                        className="w-full border rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
+                        placeholder="e.g. Sayre Hwy, Valencia City, Bukidnon"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        Additional Subtext (Below Address)
+                      </label>
+                      <input
+                        value={loginPage.footerSubtext ?? ''}
+                        onChange={(e) => setLoginPage({ ...loginPage, footerSubtext: e.target.value })}
+                        className="w-full border rounded-xl px-3 py-2 text-xs focus:ring-2 focus:ring-rose-500"
+                        placeholder="Optional footnote or dealership permit info"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1038,21 +1028,26 @@ export default function Settings() {
 
           {/* AUDIT LOGS SECTION */}
           {activeSection === 'audit' && isAdmin && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-              <div className="border-b pb-4">
-                <h2 className="text-lg font-bold text-slate-800">System Audit Trail</h2>
-                <p className="text-xs text-slate-500">Security and operations log recording all bookings, dispatches, and overrides</p>
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">System Audit Trail</h2>
+                  <p className="text-xs text-slate-500">Security and operational activity log tracking all system events, approvals, and records</p>
+                </div>
+                <div className="text-xs text-slate-400 font-medium">
+                  {auditLogs.length} total event(s) recorded
+                </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b">
+              <div className="overflow-x-auto touch-pan-x -mx-4 px-4 sm:mx-0 sm:px-0">
+                <table className="w-full text-sm min-w-[700px]">
+                  <thead className="bg-slate-50 border-b text-xs">
                     <tr>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Timestamp</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-600">User / Staff</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Action</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Module</th>
-                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Details</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Timestamp</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">User / Staff</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Action</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600 whitespace-nowrap">Module</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600 min-w-[320px]">Event Details (Summary Description)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1064,15 +1059,61 @@ export default function Settings() {
                       <tr>
                         <td colSpan={5} className="text-center py-8 text-slate-400">No audit records logged yet</td>
                       </tr>
-                    ) : auditLogs.map((log, idx) => (
-                      <tr key={idx} className="border-b hover:bg-slate-50 text-xs">
-                        <td className="px-4 py-2.5 text-slate-500">{formatDateTime(log.createdAt || log.timestamp)}</td>
-                        <td className="px-4 py-2.5 font-medium text-slate-800">{log.userName || log.staffName || log.user?.name || 'System'}</td>
-                        <td className="px-4 py-2.5 font-semibold text-rose-700">{log.action}</td>
-                        <td className="px-4 py-2.5 text-slate-600">{log.module || log.entityType || 'General'}</td>
-                        <td className="px-4 py-2.5 text-slate-500 font-mono truncate max-w-xs">{typeof log.details === 'object' ? JSON.stringify(log.details) : log.details || '—'}</td>
-                      </tr>
-                    ))}
+                    ) : auditLogs.map((log, idx) => {
+                      const formatDetailsText = (details: any) => {
+                        if (!details && details !== 0) return 'Action successfully completed in the system.';
+                        if (typeof details === 'string') {
+                          const trimmed = details.trim();
+                          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                            try {
+                              const parsed = JSON.parse(trimmed);
+                              const entries = Object.entries(parsed).filter(([k]) => !['id', '_id'].includes(k));
+                              if (entries.length === 0) return trimmed;
+                              return entries.map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: "${v}"`).join(', ') + '.';
+                            } catch {
+                              return trimmed;
+                            }
+                          }
+                          return trimmed;
+                        }
+                        if (typeof details === 'object') {
+                          try {
+                            const entries = Object.entries(details).filter(([k]) => !['id', '_id'].includes(k));
+                            if (entries.length === 0) return JSON.stringify(details);
+                            return entries.map(([k, v]) => `${k.replace(/([A-Z])/g, ' $1').toLowerCase()}: "${v}"`).join(', ') + '.';
+                          } catch {
+                            return JSON.stringify(details);
+                          }
+                        }
+                        return String(details);
+                      };
+
+                      return (
+                        <tr key={idx} className="border-b hover:bg-slate-50/70 text-xs transition-colors">
+                          <td className="px-4 py-3 text-slate-500 whitespace-nowrap align-top font-mono text-[11px]">
+                            {formatDateTime(log.createdAt || log.timestamp)}
+                          </td>
+                          <td className="px-4 py-3 align-top whitespace-nowrap font-medium text-slate-800">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold text-[11px]">
+                              {log.userName || log.staffName || log.user?.name || log.user || 'System'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top whitespace-nowrap">
+                            <span className="inline-block px-2 py-1 rounded bg-rose-50 border border-rose-100/80 font-bold text-rose-700 text-[11px]">
+                              {log.action}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top text-slate-600 whitespace-nowrap font-medium text-[11px]">
+                            {log.module || log.entityType || 'General'}
+                          </td>
+                          <td className="px-4 py-3 align-top text-slate-700 min-w-[320px] max-w-xl">
+                            <div className="bg-slate-50/80 rounded-xl p-3 border border-slate-200/80 text-slate-800 text-xs sm:text-[13px] leading-relaxed break-words font-normal shadow-sm">
+                              {formatDetailsText(log.details)}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1117,7 +1158,7 @@ export default function Settings() {
                     onChange={(e) => setProductForm({ ...productForm, category: e.target.value, flavor: '', newFlavor: '' })}
                     className="w-full border rounded-lg px-3 py-2 text-sm"
                   >
-                    {[...new Set(['CORNETTO', 'MAGNUM', 'STICK', 'TUB', 'BULK', ...products.map(p => p.category).filter(Boolean)])].map(category => (
+                    {[...new Set(['CORNETTO', 'MAGNUM', 'STICKS', 'SUPREME 1.3L', ...products.map(p => p.category).filter(Boolean)])].map(category => (
                       <option key={category} value={category}>{category}</option>
                     ))}
                   </select>

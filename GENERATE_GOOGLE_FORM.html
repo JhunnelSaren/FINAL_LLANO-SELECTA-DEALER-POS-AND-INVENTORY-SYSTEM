@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generate Google Form - Valencia City Tourism Survey</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .card {
+      background: #ffffff;
+      max-width: 800px;
+      width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+      padding: 32px;
+    }
+    h1 {
+      color: #1a73e8;
+      margin-top: 0;
+      font-size: 24px;
+    }
+    .badge {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1967d2;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 16px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    .step-box {
+      background: #f8f9fa;
+      border: 1px solid #e1e4e8;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+    }
+    .step-box h3 {
+      margin-top: 0;
+      color: #202124;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .step-number {
+      background: #1a73e8;
+      color: white;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .btn {
+      display: inline-block;
+      background: #1a73e8;
+      color: white;
+      text-decoration: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s;
+    }
+    .btn:hover {
+      background: #1557b0;
+    }
+    .btn-secondary {
+      background: #34a853;
+    }
+    .btn-secondary:hover {
+      background: #2b8c45;
+    }
+    pre {
+      background: #202124;
+      color: #f1f3f4;
+      padding: 14px;
+      border-radius: 6px;
+      overflow-x: auto;
+      max-height: 250px;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .alert-box {
+      background: #fef7e0;
+      border-left: 4px solid #f9ab00;
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 24px;
+      font-size: 14px;
+      color: #3c4043;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="badge">STI College Valencia • 4th-Year BSTM Research</div>
+  <h1>Auto-Generate Google Form Survey</h1>
+  <p><strong>Topic:</strong> “The Relationship Between Destination Image and Tourists’ Intention to Visit Valencia City, Bukidnon”</p>
+
+  <div class="alert-box">
+    <strong>🔒 Account Security Notice:</strong> Never share your personal Google account password. Google prohibits automated login scripts with passwords to protect user security. Using Google's official <strong>Google Apps Script</strong> enables you to build the full Google Form in your personal account in just 2 clicks with 100% security!
+  </div>
+
+  <div class="step-box">
+    <h3><span class="step-number">1</span> Step 1: Copy the Form Generator Script</h3>
+    <p>Click below to copy the full automation code that creates the exact questions, sections, and 5-point Likert rating scales.</p>
+    <button class="btn" id="copyBtn" onclick="copyCode()">📋 Copy Script to Clipboard</button>
+    <span id="copiedNotice" style="margin-left: 10px; color: #1e7e34; font-weight: bold; display: none;">✓ Copied!</span>
+  </div>
+
+  <div class="step-box">
+    <h3><span class="step-number">2</span> Step 2: Open Google Apps Script</h3>
+    <p>Open Google Apps Script in your browser (make sure you are signed in with <strong>jhunnelsaren17@gmail.com</strong>):</p>
+    <a class="btn btn-secondary" href="https://script.new" target="_blank">🚀 Open https://script.new</a>
+  </div>
+
+  <div class="step-box">
+    <h3><span class="step-number">3</span> Step 3: Paste and Click Run</h3>
+    <ol style="margin-left: -15px; line-height: 1.6;">
+      <li>Select and delete any template text currently inside the editor window (<code>function myFunction() { ... }</code>).</li>
+      <li>Paste the copied script (<strong>Ctrl + V</strong>).</li>
+      <li>Click the <strong>Save</strong> icon (💾) or press <strong>Ctrl + S</strong>.</li>
+      <li>At the top toolbar, select <code>createValenciaSurveyForm_GridFormat</code> (Table format) or <code>createValenciaSurveyForm_LinearScaleFormat</code>.</li>
+      <li>Click <strong>Run (▶)</strong>.</li>
+      <li>When prompted: click <strong>Review permissions</strong> &rarr; choose your account &rarr; click <strong>Advanced</strong> &rarr; click <strong>Go to Untitled project (unsafe)</strong> &rarr; click <strong>Allow</strong>.</li>
+      <li>Look at the <strong>Execution log</strong> at the bottom: You will immediately see your <strong>Edit Form URL</strong> and <strong>Shareable Survey URL</strong>!</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+  function copyCode() {
+    fetch('create_valencia_survey_form.gs')
+      .then(response => response.text())
+      .then(text => {
+        navigator.clipboard.writeText(text).then(() => {
+          const notice = document.getElementById('copiedNotice');
+          notice.style.display = 'inline';
+          setTimeout(() => { notice.style.display = 'none'; }, 3000);
+        });
+      })
+      .catch(err => {
+        alert("Please copy directly from the file create_valencia_survey_form.gs in your folder.");
+      });
+  }
+</script>
+
+</body>
+</html>

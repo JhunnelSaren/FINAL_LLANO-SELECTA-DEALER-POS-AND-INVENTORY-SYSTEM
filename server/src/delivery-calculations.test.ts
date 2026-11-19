@@ -86,4 +86,23 @@ describe('delivery payment calculations', () => {
     expect(totals.finalProductBill).toBe(30000);
     expect(totals.totalAmountDue).toBe(30500);
   });
+
+  it('deducts direct total BO amount accurately and preserves previous balance', () => {
+    const totals = calculateDeliveryAmounts(
+      [{ acceptedQty: 10, unitPrice: 100 }], // gross = 1000
+      250, // previous balance = 250
+      'Cash',
+      0, // no payment collected during delivery
+      0, // no short deduction
+      150, // direct BO amount = 150
+    );
+    expect(totals.productBillAmount).toBe(1000);
+    expect(totals.boDeductionAmount).toBe(150);
+    expect(totals.finalProductBill).toBe(850);
+    expect(totals.previousBalance).toBe(250);
+    expect(totals.totalAmountDue).toBe(1100);
+    expect(totals.amountCollected).toBe(0);
+    expect(totals.balanceRemaining).toBe(1100);
+    expect(totals.paymentStatus).toBe('Unpaid');
+  });
 });

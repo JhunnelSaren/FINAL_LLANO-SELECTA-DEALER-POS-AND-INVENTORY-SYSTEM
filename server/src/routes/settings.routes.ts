@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
 import { imageUpload } from '../upload.js';
+import { formatAuditSentence } from '../audit-formatter.js';
 
 const router = Router();
 
@@ -31,6 +32,9 @@ export interface LoginPageConfig {
   socialGoogleText: string;
   socialAppleText: string;
   footerText: string;
+  copyrightText: string;
+  footerAddress: string;
+  footerSubtext: string;
   registerText: string;
   registerUrl: string;
   slides: LoginSlide[];
@@ -56,6 +60,9 @@ const defaultLoginPage: LoginPageConfig = {
   socialGoogleText: 'Continue with Google',
   socialAppleText: 'Continue with Apple',
   footerText: "Don't have an account?",
+  copyrightText: '© 2026 Llano Selecta',
+  footerAddress: 'Sayre Hwy, Valencia City, Bukidnon',
+  footerSubtext: '',
   registerText: 'Register',
   registerUrl: '#register',
   slides: [
@@ -107,6 +114,9 @@ function readLoginPage(value?: string | null): LoginPageConfig {
       socialGoogleText: typeof parsed.socialGoogleText === 'string' ? parsed.socialGoogleText : defaultLoginPage.socialGoogleText,
       socialAppleText: typeof parsed.socialAppleText === 'string' ? parsed.socialAppleText : defaultLoginPage.socialAppleText,
       footerText: typeof parsed.footerText === 'string' ? parsed.footerText : defaultLoginPage.footerText,
+      copyrightText: typeof parsed.copyrightText === 'string' && parsed.copyrightText.trim() ? parsed.copyrightText : defaultLoginPage.copyrightText,
+      footerAddress: typeof parsed.footerAddress === 'string' && parsed.footerAddress.trim() ? parsed.footerAddress : defaultLoginPage.footerAddress,
+      footerSubtext: typeof parsed.footerSubtext === 'string' ? parsed.footerSubtext : defaultLoginPage.footerSubtext,
       registerText: typeof parsed.registerText === 'string' ? parsed.registerText : defaultLoginPage.registerText,
       registerUrl: typeof parsed.registerUrl === 'string' ? parsed.registerUrl : defaultLoginPage.registerUrl,
       slides: Array.from({ length: 3 }, (_, index) => ({
@@ -172,6 +182,9 @@ router.put('/login-page', authenticateToken, requireRole('Admin'), async (req: A
       socialGoogleText: cleanText(input.socialGoogleText, defaultLoginPage.socialGoogleText, 80),
       socialAppleText: cleanText(input.socialAppleText, defaultLoginPage.socialAppleText, 80),
       footerText: cleanText(input.footerText, defaultLoginPage.footerText, 100),
+      copyrightText: cleanText(input.copyrightText, defaultLoginPage.copyrightText, 100),
+      footerAddress: cleanText(input.footerAddress, defaultLoginPage.footerAddress, 150),
+      footerSubtext: typeof input.footerSubtext === 'string' ? input.footerSubtext.trim().slice(0, 250) : defaultLoginPage.footerSubtext,
       registerText: cleanText(input.registerText, defaultLoginPage.registerText, 60),
       registerUrl: assetPath(input.registerUrl, defaultLoginPage.registerUrl),
       slides: Array.from({ length: 3 }, (_, index) => ({
@@ -200,6 +213,21 @@ router.post('/login-page/upload', authenticateToken, requireRole('Admin'), image
   res.status(201).json({ imageUrl });
 });
 
+// GET /api/settings/header (Accessible to all authenticated staff & admin for top header location bar)
+router.get('/header', authenticateToken, async (_req, res: Response) => {
+  try {
+    const raw = await prisma.$queryRaw<any[]>`SELECT headerSubtitle, dealerName FROM systemsetting LIMIT 1`.catch(() => []);
+    const subtitle = raw[0]?.headerSubtitle || 'Sayre Hwy, Valencia City • San Fernando • Cabanglasan';
+    const dealer = raw[0]?.dealerName || 'Llano Selecta Dealer';
+    res.json({ headerSubtitle: subtitle, dealerName: dealer });
+  } catch (err: any) {
+    res.json({
+      headerSubtitle: 'Sayre Hwy, Valencia City • San Fernando • Cabanglasan',
+      dealerName: 'Llano Selecta Dealer',
+    });
+  }
+});
+
 // GET /api/settings
 router.get('/', authenticateToken, requireRole('Admin'), async (_req, res: Response) => {
   try {
@@ -221,7 +249,9 @@ router.get('/', authenticateToken, requireRole('Admin'), async (_req, res: Respo
       });
     }
     const { mondayRoute, tuesdayRoute, wednesdayActivity, thursdayRoute, fridayRoute, ...operatingSettings } = settings;
-    res.json(operatingSettings);
+    const rawSetting = await prisma.$queryRaw<any[]>`SELECT headerSubtitle FROM systemsetting WHERE id = ${settings.id} LIMIT 1`.catch(() => []);
+    const headerSubtitle = rawSetting[0]?.headerSubtitle || 'Sayre Hwy, Valencia City • San Fernando • Cabanglasan';
+    res.json({ ...operatingSettings, headerSubtitle });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -235,6 +265,7 @@ router.put('/', authenticateToken, requireRole('Admin'), async (req: Authenticat
       address,
       contactNumber,
       receiptHeader,
+      headerSubtitle,
       defaultQuotaTarget,
       freezerTotalFee,
       freezerProductAllocation,
@@ -272,8 +303,19 @@ router.put('/', authenticateToken, requireRole('Admin'), async (req: Authenticat
       },
     });
 
-    await recordAudit('Update Settings', 'Settings', req.user?.name || 'Admin', { dealerName });
-    res.json(updated);
+    if (headerSubtitle !== undefined) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE \`systemsetting\` SET \`headerSubtitle\` = ? WHERE \`id\` = ?`,
+        String(headerSubtitle).trim(),
+        id
+      ).catch((err) => console.error('Failed to update headerSubtitle:', err));
+    }
+
+    await recordAudit('Update Settings', 'Settings', req.user?.name || 'Admin', {
+      dealerName,
+      headerSubtitle: headerSubtitle !== undefined ? String(headerSubtitle).trim() : undefined,
+    });
+    res.json({ ...updated, headerSubtitle: headerSubtitle !== undefined ? String(headerSubtitle).trim() : 'Sayre Hwy, Valencia City • San Fernando • Cabanglasan' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -284,9 +326,15 @@ router.get('/audit-logs', authenticateToken, requireRole('Admin'), async (_req, 
   try {
     const logs = await prisma.auditLog.findMany({
       orderBy: { timestamp: 'desc' },
-      take: 100,
+      take: 200,
     });
-    res.json(logs);
+
+    const formatted = logs.map((log) => ({
+      ...log,
+      details: formatAuditSentence(log.action, log.module, log.user, log.details),
+    }));
+
+    res.json(formatted);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

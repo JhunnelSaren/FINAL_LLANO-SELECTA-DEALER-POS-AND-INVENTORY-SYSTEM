@@ -1,4 +1,4 @@
-﻿import { Router, Response } from 'express';
+import { Router, Response } from 'express';
 import prisma from '../db.js';
 import { Prisma } from '../../generated-prisma/index.js';
 import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } from '../auth.js';
@@ -133,9 +133,10 @@ class ReconciliationError extends Error {
 }
 
 async function lockRunForCloseout(tx: Prisma.TransactionClient, runId: string) {
-  const [run] = await tx.$queryRaw<Array<{ status: string }>>`
-    SELECT status FROM DeliveryRun WHERE id = ${runId} FOR UPDATE
-  `;
+  const run = await tx.deliveryRun.findUnique({
+    where: { id: runId },
+    select: { status: true },
+  });
   if (!run) throw new ReconciliationError('Delivery run not found.', 404);
   return run;
 }
@@ -175,9 +176,10 @@ async function finalizeReconciledRun(tx: Prisma.TransactionClient, runId: string
   // Lock inventory in a stable order so simultaneous run closeouts do not race.
   for (const productId of [...movements.keys()].sort()) {
     const movement = movements.get(productId)!;
-    const [product] = await tx.$queryRaw<Array<{ id: string; name: string; stock: number; reservedStock: number }>>`
-      SELECT id, name, stock, reservedStock FROM product WHERE id = ${productId} FOR UPDATE
-    `;
+    const product = await tx.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true, stock: true, reservedStock: true },
+    });
     if (!product) throw new ReconciliationError(`Product ${productId} no longer exists. Inventory closeout was not applied.`);
 
     if (legacyDispatch) {

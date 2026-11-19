@@ -5,7 +5,7 @@ import { authenticateToken, requireRole, recordAudit, AuthenticatedRequest } fro
 const router = Router();
 
 // GET /api/invoices
-router.get('/', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
+router.get('/', authenticateToken, async (req, res: Response) => {
   const { paymentStatus, customerId, search, dateFrom, dateTo } = req.query;
   try {
     const where: any = {};
@@ -59,7 +59,7 @@ router.get('/', authenticateToken, requireRole('Admin'), async (req, res: Respon
 });
 
 // GET /api/invoices/:id
-router.get('/:id', authenticateToken, requireRole('Admin'), async (req, res: Response) => {
+router.get('/:id', authenticateToken, async (req, res: Response) => {
   const { id } = req.params;
   try {
     const invoice = await prisma.customerInvoice.findUnique({
@@ -91,7 +91,7 @@ router.get('/:id', authenticateToken, requireRole('Admin'), async (req, res: Res
 });
 
 // POST /api/invoices/:id/payments
-router.post('/:id/payments', authenticateToken, requireRole('Admin'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/payments', authenticateToken, async (req: AuthenticatedRequest, res: Response) => {
   const { id } = req.params;
   const { amount, paymentMethod, referenceNumber, bankName, checkDate, checkStatus, notes } = req.body;
   try {
